@@ -231,7 +231,10 @@ ul { padding-left: 1.1rem; }
 }
 .fx-sticker {
   position: absolute;
-  font-size: 1.3rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 10px #ffffff88;
   animation: flySticker 1.6s ease-out forwards;
 }
 @keyframes spinHole {
@@ -278,8 +281,11 @@ ul { padding-left: 1.1rem; }
 }
 .global-fx-item {
   position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  box-shadow: 0 0 16px #ffffff99;
   animation: globalFly 1.4s ease-out forwards;
-  font-size: 2rem;
 }
 @keyframes globalFly {
   from { transform: translateY(120px) scale(0.7); opacity: 0; }

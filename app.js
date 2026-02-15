@@ -364,11 +364,12 @@ function handByTurn() {
 
 function spawnGlobalFx(count) {
   if (!globalFxOverlay) return;
-  const emojis = ['✨', '🎈', '🃏', '🔥', '⭐'];
-  for (let i = 0; i < Math.min(count, 8); i++) {
+  const palette = ['#f8fafc', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b'];
+  for (let i = 0; i < Math.min(count, 10); i++) {
     const e = document.createElement('span');
     e.className = 'global-fx-item';
-    e.textContent = emojis[(i + count) % emojis.length];
+    e.textContent = '';
+    e.style.background = palette[(i + count) % palette.length];
     e.style.left = `${5 + Math.random() * 90}%`;
     e.style.top = `${40 + Math.random() * 45}%`;
     globalFxOverlay.appendChild(e);
@@ -976,21 +977,23 @@ function clearFx() {
 }
 
 function spawnSticker(count) {
-  const emojis = ['✨', '🔥', '🌀', '⭐', '🎯', '🎈'];
-  for (let i = 0; i < Math.min(7, count + 1); i++) {
+  const palette = ['#f8fafc', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399'];
+  for (let i = 0; i < Math.min(12, count + 4); i++) {
     const el = document.createElement('span');
     el.className = 'fx-sticker';
-    el.textContent = emojis[(i + count) % emojis.length];
+    el.textContent = '';
     el.style.left = `${10 + Math.random() * 80}%`;
     el.style.bottom = `${Math.random() * 30}px`;
+    el.style.background = palette[(i + count) % palette.length];
     handFxStage.appendChild(el);
 
     if (globalFxOverlay) {
       const ge = document.createElement('span');
       ge.className = 'global-fx-item';
-      ge.textContent = emojis[(i + count + 1) % emojis.length];
+      ge.textContent = '';
       ge.style.left = `${5 + Math.random() * 90}%`;
       ge.style.top = `${20 + Math.random() * 70}%`;
+      ge.style.background = palette[(i + count + 1) % palette.length];
       globalFxOverlay.appendChild(ge);
       setTimeout(() => ge.remove(), 1500);
     }
