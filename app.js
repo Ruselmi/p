@@ -815,6 +815,8 @@ const handAiSection = document.getElementById('hand-ai');
 const gestureLabel = document.getElementById('gestureLabel');
 const fingerCountLabel = document.getElementById('fingerCountLabel');
 const handFxStage = document.getElementById('handFxStage');
+const threeFxCanvas = document.getElementById('threeFxCanvas');
+const aiModelStatus = document.getElementById('aiModelStatus');
 const gestureNameInput = document.getElementById('gestureName');
 const gestureSamplesList = document.getElementById('gestureSamples');
 const avatarMouth = document.getElementById('avatarMouth');
@@ -827,7 +829,87 @@ let trackingActive = false;
 let latestFeature = null;
 let fxCooldown = 0;
 let horrorEnabled = true;
+let threeScene; let threeCamera; let threeRenderer; let threeMesh; let threeParticles = [];
+let transformerLoaded = false;
 
+
+
+
+function initThreeFx() {
+  if (!window.THREE || threeRenderer) return;
+  const THREE = window.THREE;
+  threeScene = new THREE.Scene();
+  threeCamera = new THREE.PerspectiveCamera(50, 2, 0.1, 100);
+  threeCamera.position.z = 4;
+  threeRenderer = new THREE.WebGLRenderer({ canvas: threeFxCanvas, antialias: true, alpha: true });
+  threeRenderer.setSize(threeFxCanvas.clientWidth, threeFxCanvas.clientHeight, false);
+
+  const geo = new THREE.TorusKnotGeometry(0.9, 0.25, 100, 16);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x22d3ee, emissive: 0x0ea5e9, metalness: 0.4, roughness: 0.2 });
+  threeMesh = new THREE.Mesh(geo, mat);
+  const light = new THREE.PointLight(0xffffff, 1.2);
+  light.position.set(2, 3, 4);
+  const ambient = new THREE.AmbientLight(0x334155, 0.8);
+  threeScene.add(light, ambient, threeMesh);
+
+  const tick = () => {
+    if (!threeRenderer) return;
+    threeMesh.rotation.x += 0.01;
+    threeMesh.rotation.y += 0.013;
+    threeParticles.forEach((p) => {
+      p.position.y += 0.02;
+      p.material.opacity -= 0.01;
+    });
+    threeParticles = threeParticles.filter((p) => p.material.opacity > 0);
+    threeRenderer.render(threeScene, threeCamera);
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function burstThree(color = 0xff00ff) {
+  if (!window.THREE || !threeScene) return;
+  const THREE = window.THREE;
+  for (let i = 0; i < 10; i++) {
+    const g = new THREE.SphereGeometry(0.03 + Math.random() * 0.06, 10, 10);
+    const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 });
+    const s = new THREE.Mesh(g, m);
+    s.position.set((Math.random() - 0.5) * 2, -0.8 + Math.random() * 0.5, (Math.random() - 0.5));
+    threeScene.add(s);
+    threeParticles.push(s);
+  }
+}
+
+function runTenAnimations(count) {
+  // 10 animation presets
+  if (count === 1) { avatarFace.classList.add('pulse'); burstThree(0x22c55e); }
+  if (count === 2) { spawnSticker(3); burstThree(0xf59e0b); }
+  if (count === 3) { handFxStage.classList.add('horror-fog'); burstThree(0x0ea5e9); }
+  if (count === 4) { avatarFace.classList.add('horror'); burstThree(0xffffff); }
+  if (count === 5) { avatarFace.classList.add('pulse'); spawnSticker(6); burstThree(0xf43f5e); }
+  if (count === 6) { spawnSticker(4); burstThree(0xa855f7); }
+  if (count === 7) { handFxStage.classList.add('horror-fog'); burstThree(0x10b981); }
+  if (count === 8) { avatarFace.classList.add('horror'); burstThree(0x60a5fa); }
+  if (count === 9) { avatarFace.classList.add('pulse'); spawnSticker(7); burstThree(0xfb7185); }
+  if (count >= 10) { handFxStage.classList.add('horror-fog'); avatarFace.classList.add('horror'); spawnSticker(8); burstThree(0xf8fafc); }
+}
+
+async function initTransformerLite() {
+  if (transformerLoaded) return;
+  try {
+    if (!window.transformersBridge?.pipeline) {
+      aiModelStatus.textContent = 'Transformer.js: bridge belum siap';
+      return;
+    }
+    // lightweight warmup call
+    const classifier = await window.transformersBridge.pipeline('sentiment-analysis', 'Xenova/distilbert-base-uncased-finetuned-sst-2-english');
+    const out = await classifier('hand animation ready');
+    aiModelStatus.textContent = `Transformer.js: ready (${out[0].label})`;
+    transformerLoaded = true;
+  } catch (e) {
+    aiModelStatus.textContent = 'Transformer.js: gagal load model';
+  }
+}
 
 function applyHandViewMode() {
   if (!handAiSection) return;
@@ -923,6 +1005,8 @@ function applyHandFxByCount(count) {
 
   clearFx();
   avatarFace.classList.remove('pulse');
+  initThreeFx();
+  runTenAnimations(count);
 
   if (count === 2) {
     spawnSticker(2);
@@ -1024,6 +1108,8 @@ async function startHandTracking() {
     mpHands.onResults((res) => drawResults(res.multiHandLandmarks));
     trackingActive = true;
     handStatus.textContent = 'Status: hand tracking aktif';
+    initThreeFx();
+    initTransformerLite();
 
     const loop = async () => {
       if (!trackingActive) return;
