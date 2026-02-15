@@ -17,3 +17,5 @@ python3 -m http.server 8000
 ```
 
 Lalu akses `http://localhost:8000`.
+untuk web buka 
+ https://ruselmi.github.io/p/
