@@ -168,6 +168,12 @@
         <div class="panel-row card-panel">
           <button id="startHandTracking">Start Kamera & Hand Tracking</button>
           <button id="stopHandTracking">Stop</button>
+          <label for="handViewMode">Mode Tampilan:</label>
+          <select id="handViewMode">
+            <option value="camera">Kamera Besar</option>
+            <option value="stage">Animasi Besar + Kamera Kecil Samping</option>
+          </select>
+          <label><input id="horrorModeToggle" type="checkbox" checked /> Horror FX</label>
           <span id="handStatus" class="status-pill">Status: idle</span>
         </div>
 

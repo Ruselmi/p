@@ -286,3 +286,49 @@ ul { padding-left: 1.1rem; }
   15% { opacity: 1; }
   to { transform: translateY(-220px) scale(1.25); opacity: 0; }
 }
+
+
+#hand-ai.hand-mode-stage .hand-ai-layout {
+  grid-template-columns: 1fr 320px;
+  align-items: start;
+}
+#hand-ai.hand-mode-stage #handFxStage {
+  height: 360px;
+}
+#hand-ai.hand-mode-stage #handVideo,
+#hand-ai.hand-mode-stage #handOverlay {
+  max-width: 260px;
+}
+#hand-ai.hand-mode-stage .info-card:first-child {
+  order: 2;
+}
+#hand-ai.hand-mode-stage .info-card:last-child {
+  order: 1;
+}
+
+.avatar-face.horror {
+  background: radial-gradient(circle at 50% 30%, #7f1d1d, #111827 70%);
+  box-shadow: 0 0 35px #ef4444aa;
+  animation: horrorShake 0.25s infinite;
+}
+.avatar-face.horror .eye {
+  background: #fecaca;
+  box-shadow: 0 0 12px #ef4444;
+}
+.hand-fx-stage.horror-fog::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-radial-gradient(circle at 20% 30%, #ffffff10 0 12px, #00000000 12px 24px);
+  animation: fogMove 2s linear infinite;
+}
+@keyframes horrorShake {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(1px, -1px) rotate(0.4deg); }
+  50% { transform: translate(-1px, 1px) rotate(-0.4deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+@keyframes fogMove {
+  from { transform: translateX(0); }
+  to { transform: translateX(20px); }
+}

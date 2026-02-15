@@ -53,3 +53,9 @@ Lalu buka `http://localhost:8000`.
 - UNO sekarang bisa pilih **lawan Bot** atau **2 Player Offline**.
 - Layout UNO HD dibuat lebih jelas, draw/discard tampil seperti tumpukan kartu nyata.
 - Efek Hand AI sekarang tampil juga di **seluruh layar** (fullscreen overlay) selain panel FX lokal.
+
+
+- Hand AI punya 2 mode tampilan:
+  1) Kamera Besar
+  2) Animasi Besar + Kamera Kecil Samping
+- Tambahan mode Horror FX untuk avatar/efek blackhole-whitehole.

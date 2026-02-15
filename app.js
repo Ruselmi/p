@@ -809,6 +809,9 @@ renderMonopolyBoard();
 const handVideo = document.getElementById('handVideo');
 const handOverlay = document.getElementById('handOverlay');
 const handStatus = document.getElementById('handStatus');
+const handViewMode = document.getElementById('handViewMode');
+const horrorModeToggle = document.getElementById('horrorModeToggle');
+const handAiSection = document.getElementById('hand-ai');
 const gestureLabel = document.getElementById('gestureLabel');
 const fingerCountLabel = document.getElementById('fingerCountLabel');
 const handFxStage = document.getElementById('handFxStage');
@@ -823,6 +826,13 @@ let cameraStream;
 let trackingActive = false;
 let latestFeature = null;
 let fxCooldown = 0;
+let horrorEnabled = true;
+
+
+function applyHandViewMode() {
+  if (!handAiSection) return;
+  handAiSection.classList.toggle('hand-mode-stage', handViewMode.value === 'stage');
+}
 
 const AI_STORAGE_KEY = 'gesture-ai-learning-v1';
 let gestureDataset = JSON.parse(localStorage.getItem(AI_STORAGE_KEY) || '{}');
@@ -878,6 +888,8 @@ function countOpenFingers(landmarks) {
 
 function clearFx() {
   handFxStage.innerHTML = '';
+  handFxStage.classList.remove('horror-fog');
+  avatarFace.classList.remove('horror');
   if (globalFxOverlay) globalFxOverlay.innerHTML = '';
 }
 
@@ -919,6 +931,7 @@ function applyHandFxByCount(count) {
     const h = document.createElement('div');
     h.className = 'fx-blackhole';
     handFxStage.appendChild(h);
+    if (horrorEnabled) { handFxStage.classList.add('horror-fog'); avatarFace.classList.add('horror'); }
     if (globalFxOverlay) {
       const gh = document.createElement('div');
       gh.className = 'fx-blackhole';
@@ -934,6 +947,7 @@ function applyHandFxByCount(count) {
     const h = document.createElement('div');
     h.className = 'fx-whitehole';
     handFxStage.appendChild(h);
+    if (horrorEnabled) { handFxStage.classList.add('horror-fog'); }
     if (globalFxOverlay) {
       const gw = document.createElement('div');
       gw.className = 'fx-whitehole';
@@ -959,6 +973,7 @@ function applyHandFxByCount(count) {
     handFxStage.appendChild(w);
     spawnSticker(count);
     avatarFace.classList.add('pulse');
+    if (horrorEnabled) { handFxStage.classList.add('horror-fog'); avatarFace.classList.add('horror'); }
     fxCooldown = 12;
   }
 }
@@ -987,6 +1002,10 @@ function drawResults(landmarksList) {
   fingerCountLabel.textContent = `Jumlah jari: ${fingerCount}`;
   animateAvatarByGesture(label);
   applyHandFxByCount(fingerCount);
+  if (!horrorEnabled) {
+    handFxStage.classList.remove('horror-fog');
+    avatarFace.classList.remove('horror');
+  }
 }
 
 async function startHandTracking() {
@@ -1027,6 +1046,8 @@ function stopHandTracking() {
 
 document.getElementById('startHandTracking').addEventListener('click', startHandTracking);
 document.getElementById('stopHandTracking').addEventListener('click', stopHandTracking);
+handViewMode.addEventListener('change', applyHandViewMode);
+horrorModeToggle.addEventListener('change', () => { horrorEnabled = horrorModeToggle.checked; if (!horrorEnabled) { handFxStage.classList.remove('horror-fog'); avatarFace.classList.remove('horror'); } });
 document.getElementById('saveGestureBtn').addEventListener('click', () => {
   const label = gestureNameInput.value.trim().toLowerCase();
   if (!label || !latestFeature) {
@@ -1045,4 +1066,5 @@ document.getElementById('clearGestureBtn').addEventListener('click', () => {
   handStatus.textContent = 'Status: semua data AI gesture dihapus.';
   renderGestureSamples();
 });
+applyHandViewMode();
 renderGestureSamples();
