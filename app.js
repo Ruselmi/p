@@ -3,8 +3,19 @@ const COLORS = {
   blue: '#2563eb',
   green: '#16a34a',
   yellow: '#d97706',
+  pink: '#db2777',
+  teal: '#0d9488',
+  orange: '#ea580c',
+  purple: '#7e22ce',
   wild: '#111827',
 };
+
+let suppressSync = false;
+
+function withNoSync(fn) {
+  suppressSync = true;
+  try { fn(); } finally { suppressSync = false; }
+}
 
 // Tabs
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -16,121 +27,304 @@ for (const btn of document.querySelectorAll('.tab-btn')) {
   });
 }
 
-// UNO
+// --- PeerJS P2P (room code 4 char, max 4 players) ---
+const p2pStatus = document.getElementById('p2pStatus');
+const createRoomBtn = document.getElementById('createRoomBtn');
+const joinRoomBtn = document.getElementById('joinRoomBtn');
+const leaveRoomBtn = document.getElementById('leaveRoomBtn');
+const joinCodeInput = document.getElementById('joinCodeInput');
+
+const p2p = {
+  peer: null,
+  isHost: false,
+  hostConn: null,
+  guestConns: [],
+  roomCode: null,
+};
+
+function randomRoomCode() {
+  return Math.random().toString(36).slice(2, 6).toUpperCase();
+}
+
+function updateP2PStatus(text) {
+  p2pStatus.textContent = text;
+}
+
+function cleanupP2P() {
+  p2p.hostConn?.close();
+  p2p.guestConns.forEach((c) => c.close());
+  p2p.peer?.destroy();
+  p2p.peer = null;
+  p2p.isHost = false;
+  p2p.hostConn = null;
+  p2p.guestConns = [];
+  p2p.roomCode = null;
+  updateP2PStatus('Offline');
+}
+
+function emitP2P(action, payload) {
+  if (suppressSync) return;
+  const msg = { action, payload };
+  if (!p2p.peer) return;
+  if (p2p.isHost) {
+    p2p.guestConns.forEach((c) => c.open && c.send(msg));
+  } else if (p2p.hostConn?.open) {
+    p2p.hostConn.send(msg);
+  }
+}
+
+function handleP2PMessage(msg, sourceConn = null) {
+  if (!msg || !msg.action) return;
+  withNoSync(() => {
+    if (msg.action === 'uno:start') {
+      startUno(msg.payload.mode);
+    } else if (msg.action === 'uno:play') {
+      playerPlay(msg.payload.index, true);
+    } else if (msg.action === 'uno:draw') {
+      handleUnoDraw(true);
+    } else if (msg.action === 'chess:move') {
+      handleSquareClick(msg.payload.r, msg.payload.c, true);
+    } else if (msg.action === 'chess:reset') {
+      initChess();
+    } else if (msg.action === 'mono:addPlayer') {
+      addMonopolyPlayer(msg.payload.name, msg.payload.balance);
+    } else if (msg.action === 'mono:transfer') {
+      monopolyTransfer(msg.payload.from, msg.payload.to, msg.payload.amount);
+    } else if (msg.action === 'mono:bankTxn') {
+      monopolyBankTxn(msg.payload.idx, msg.payload.amount);
+    }
+  });
+
+  if (p2p.isHost && sourceConn) {
+    p2p.guestConns.forEach((c) => {
+      if (c !== sourceConn && c.open) c.send(msg);
+    });
+  }
+}
+
+createRoomBtn.addEventListener('click', () => {
+  if (!window.Peer) {
+    updateP2PStatus('PeerJS tidak tersedia.');
+    return;
+  }
+  cleanupP2P();
+  const roomCode = randomRoomCode();
+  const hostId = `gamehub-${roomCode}`;
+  const peer = new window.Peer(hostId);
+  p2p.peer = peer;
+  p2p.isHost = true;
+  p2p.roomCode = roomCode;
+  updateP2PStatus(`Membuat room ${roomCode}...`);
+
+  peer.on('open', () => updateP2PStatus(`Host online. Kode room: ${roomCode}`));
+  peer.on('connection', (conn) => {
+    if (p2p.guestConns.length >= 3) {
+      conn.on('open', () => conn.send({ action: 'system', payload: 'Room penuh (max 4).' }));
+      setTimeout(() => conn.close(), 500);
+      return;
+    }
+    p2p.guestConns.push(conn);
+    conn.on('data', (msg) => handleP2PMessage(msg, conn));
+    conn.on('close', () => {
+      p2p.guestConns = p2p.guestConns.filter((c) => c !== conn);
+      updateP2PStatus(`Host room ${roomCode} online | client: ${p2p.guestConns.length}`);
+    });
+    updateP2PStatus(`Host room ${roomCode} online | client: ${p2p.guestConns.length}`);
+  });
+  peer.on('error', (e) => updateP2PStatus(`Error host: ${e.type}`));
+});
+
+joinRoomBtn.addEventListener('click', () => {
+  if (!window.Peer) {
+    updateP2PStatus('PeerJS tidak tersedia.');
+    return;
+  }
+  cleanupP2P();
+  const code = joinCodeInput.value.trim().toUpperCase();
+  if (code.length !== 4) {
+    updateP2PStatus('Kode room harus 4 karakter.');
+    return;
+  }
+  const peer = new window.Peer();
+  p2p.peer = peer;
+  p2p.roomCode = code;
+  peer.on('open', () => {
+    const conn = peer.connect(`gamehub-${code}`);
+    p2p.hostConn = conn;
+    conn.on('open', () => updateP2PStatus(`Terhubung ke room ${code}`));
+    conn.on('data', (msg) => {
+      if (msg.action === 'system') {
+        updateP2PStatus(String(msg.payload));
+        return;
+      }
+      handleP2PMessage(msg);
+    });
+    conn.on('close', () => updateP2PStatus('Koneksi host terputus'));
+  });
+  peer.on('error', (e) => updateP2PStatus(`Error join: ${e.type}`));
+});
+
+leaveRoomBtn.addEventListener('click', cleanupP2P);
+
+// --- UNO HD ---
 const unoMode = document.getElementById('unoMode');
 const unoStatus = document.getElementById('unoStatus');
 const unoTopCard = document.getElementById('unoTopCard');
 const unoBotCount = document.getElementById('unoBotCount');
 const unoHand = document.getElementById('unoHand');
+const unoSideBadge = document.getElementById('unoSideBadge');
 let unoState;
+
+function makeFlipDual(valueFront, colorFront) {
+  const darkColors = ['pink', 'teal', 'orange', 'purple'];
+  const backColor = darkColors[Math.floor(Math.random() * darkColors.length)];
+  const backValue = valueFront === 'flip' ? String((Math.floor(Math.random() * 7) + 1)) : valueFront;
+  return {
+    front: { value: valueFront, color: colorFront },
+    back: { value: backValue, color: backColor },
+  };
+}
 
 function buildUnoDeck(mode) {
   const colors = ['red', 'blue', 'green', 'yellow'];
-  const numbers = mode === 'flip' ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const numbers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
   const deck = [];
   for (const c of colors) {
-    for (const n of numbers) deck.push({ color: c, value: String(n) });
-    deck.push({ color: c, value: 'skip' }, { color: c, value: '+2' });
+    for (const n of numbers) {
+      if (mode === 'flip') deck.push(makeFlipDual(String(n), c));
+      else deck.push({ color: c, value: String(n) });
+    }
+    if (mode === 'flip') {
+      deck.push(makeFlipDual('skip', c), makeFlipDual('+2', c), makeFlipDual('flip', c));
+    } else {
+      deck.push({ color: c, value: 'skip' }, { color: c, value: '+2' });
+    }
   }
-  for (let i = 0; i < 4; i++) deck.push({ color: 'wild', value: 'wild' });
+  for (let i = 0; i < 4; i++) {
+    if (mode === 'flip') deck.push(makeFlipDual('wild', 'wild'));
+    else deck.push({ color: 'wild', value: 'wild' });
+  }
   return deck.sort(() => Math.random() - 0.5);
 }
 
+function getCardFace(card) {
+  if (unoState.mode === 'flip') return card[unoState.side];
+  return card;
+}
+
 function canPlay(card, top) {
-  return card.color === 'wild' || card.color === top.color || card.value === top.value;
+  const c = getCardFace(card);
+  const t = getCardFace(top);
+  return c.color === 'wild' || c.color === t.color || c.value === t.value;
 }
 
 function drawCard(player) {
-  if (unoState.deck.length === 0) return;
+  if (!unoState.deck.length) return;
   player.push(unoState.deck.pop());
 }
 
-function applySpecialRules(targetHand) {
+function drawMultiple(player, count) {
+  for (let i = 0; i < count; i++) drawCard(player);
+}
+
+function applySpecialRules(targetHand, owner) {
   const mode = unoState.mode;
-  if (mode === 'mercy' && targetHand.length >= 25) return true;
-  if (mode === 'fkk' && targetHand.length >= 15) {
-    for (let i = 0; i < 2; i++) drawCard(targetHand);
-  }
+  if (mode === 'mercy' && targetHand.length >= 30) return true;
+  if (mode === 'fkk' && targetHand.length >= 15) drawMultiple(targetHand, 2);
+  if (mode === 'mercy' && owner === 'bot' && Math.random() < 0.2) drawMultiple(targetHand, 8);
   return false;
 }
 
-function startUno() {
-  const mode = unoMode.value;
+function startUno(forcedMode = null) {
+  const mode = forcedMode || unoMode.value;
+  unoMode.value = mode;
   const deck = buildUnoDeck(mode);
-  const startCards = mode === 'classic' ? 7 : mode === 'flip' ? 8 : 10;
-  unoState = {
-    mode,
-    deck,
-    player: [],
-    bot: [],
-    top: null,
-    ended: false,
-  };
-  for (let i = 0; i < startCards; i++) {
-    drawCard(unoState.player);
-    drawCard(unoState.bot);
-  }
+  const startCards = mode === 'classic' ? 7 : mode === 'flip' ? 7 : 10;
+  unoState = { mode, deck, player: [], bot: [], top: null, ended: false, side: 'front' };
+  for (let i = 0; i < startCards; i++) { drawCard(unoState.player); drawCard(unoState.bot); }
   unoState.top = unoState.deck.pop();
   renderUno();
+  emitP2P('uno:start', { mode });
 }
 
 function botTurn() {
   if (unoState.ended) return;
   const idx = unoState.bot.findIndex((c) => canPlay(c, unoState.top));
-  if (idx === -1) drawCard(unoState.bot);
-  else unoState.top = unoState.bot.splice(idx, 1)[0];
+  if (idx === -1) {
+    if (unoState.mode === 'mercy') drawMultiple(unoState.bot, 8);
+    else drawCard(unoState.bot);
+  } else {
+    const played = unoState.bot.splice(idx, 1)[0];
+    unoState.top = played;
+    if (unoState.mode === 'flip' && getCardFace(played).value === 'flip') {
+      unoState.side = unoState.side === 'front' ? 'back' : 'front';
+    }
+  }
 
-  if (applySpecialRules(unoState.bot)) {
+  if (applySpecialRules(unoState.bot, 'bot')) {
     unoState.ended = true;
-    unoStatus.textContent = 'Mercy rule aktif: Bot kalah karena kartu terlalu banyak. Kamu menang!';
-  } else if (unoState.bot.length === 0) {
+    unoStatus.textContent = 'Mercy: bot kena over-limit kartu. Kamu menang!';
+  } else if (!unoState.bot.length) {
     unoState.ended = true;
     unoStatus.textContent = 'Bot menang!';
   }
 }
 
-function playerPlay(index) {
+function playerPlay(index, fromRemote = false) {
   if (unoState.ended) return;
   const card = unoState.player[index];
-  if (!canPlay(card, unoState.top)) return;
-  unoState.top = unoState.player.splice(index, 1)[0];
-  if (unoState.player.length === 0) {
+  if (!card || !canPlay(card, unoState.top)) return;
+  const played = unoState.player.splice(index, 1)[0];
+  unoState.top = played;
+  if (unoState.mode === 'flip' && getCardFace(played).value === 'flip') {
+    unoState.side = unoState.side === 'front' ? 'back' : 'front';
+  }
+
+  if (!unoState.player.length) {
     unoState.ended = true;
     unoStatus.textContent = 'Kamu menang!';
   } else {
     botTurn();
   }
   renderUno();
+  if (!fromRemote) emitP2P('uno:play', { index });
+}
+
+function handleUnoDraw(fromRemote = false) {
+  if (unoState.ended) return;
+  if (unoState.mode === 'mercy') drawMultiple(unoState.player, 10);
+  else drawCard(unoState.player);
+  botTurn();
+  renderUno();
+  if (!fromRemote) emitP2P('uno:draw', {});
 }
 
 function renderUno() {
-  unoTopCard.textContent = `${unoState.top.color} ${unoState.top.value}`;
-  unoTopCard.style.background = COLORS[unoState.top.color] || '#111827';
+  const topFace = getCardFace(unoState.top);
+  unoTopCard.textContent = `${topFace.color} ${topFace.value}`;
+  unoTopCard.style.background = COLORS[topFace.color] || '#111827';
   unoBotCount.textContent = `${unoState.bot.length} kartu`;
+  unoSideBadge.textContent = unoState.mode === 'flip' ? unoState.side.toUpperCase() : 'N/A';
   unoHand.innerHTML = '';
-  unoState.player.forEach((c, i) => {
+  unoState.player.forEach((card, i) => {
+    const f = getCardFace(card);
     const btn = document.createElement('button');
     btn.className = 'play-card';
-    btn.style.background = COLORS[c.color];
-    btn.textContent = `${c.color} ${c.value}`;
+    btn.style.background = COLORS[f.color] || '#111827';
+    btn.textContent = `${f.color} ${f.value}`;
     btn.onclick = () => playerPlay(i);
     unoHand.appendChild(btn);
   });
   if (!unoState.ended) {
-    unoStatus.textContent = `Mode: ${unoState.mode.toUpperCase()} | Giliran kamu.`;
+    unoStatus.textContent = `Mode ${unoState.mode.toUpperCase()} | Giliran kamu`;
   }
 }
 
-document.getElementById('startUno').addEventListener('click', startUno);
-document.getElementById('unoDraw').addEventListener('click', () => {
-  if (unoState.ended) return;
-  drawCard(unoState.player);
-  botTurn();
-  renderUno();
-});
+document.getElementById('startUno').addEventListener('click', () => startUno());
+document.getElementById('unoDraw').addEventListener('click', () => handleUnoDraw());
 startUno();
 
-// Chess (basic legal movement, no check logic)
+// --- Chess ---
 const PIECES = {
   r: '♜', n: '♞', b: '♝', q: '♛', k: '♚', p: '♟',
   R: '♖', N: '♘', B: '♗', Q: '♕', K: '♔', P: '♙',
@@ -162,7 +356,6 @@ function validMove(fr, fc, tr, tc) {
   if (chessState.turn === 'white' && !isWhite(piece)) return false;
   if (chessState.turn === 'black' && isWhite(piece)) return false;
   if (target !== '.' && isWhite(target) === isWhite(piece)) return false;
-
   const dr = tr - fr;
   const dc = tc - fc;
   const adR = Math.abs(dr);
@@ -194,33 +387,25 @@ function validMove(fr, fc, tr, tc) {
   return false;
 }
 
-function handleSquareClick(r, c) {
+function handleSquareClick(r, c, fromRemote = false) {
   if (chessState.ended) return;
   const sel = chessState.selected;
   const currentPiece = chessState.board[r][c];
 
   if (!sel) {
     if (currentPiece === '.') return;
-    if ((chessState.turn === 'white' && !isWhite(currentPiece)) || (chessState.turn === 'black' && isWhite(currentPiece))) {
-      return;
-    }
+    if ((chessState.turn === 'white' && !isWhite(currentPiece)) || (chessState.turn === 'black' && isWhite(currentPiece))) return;
     chessState.selected = [r, c];
     renderChess();
+    if (!fromRemote) emitP2P('chess:move', { r, c });
     return;
   }
 
   const [fr, fc] = sel;
-  if (fr === r && fc === c) {
-    chessState.selected = null;
-    renderChess();
-    return;
-  }
-
   if (validMove(fr, fc, r, c)) {
     const captured = chessState.board[r][c];
     chessState.board[r][c] = chessState.board[fr][fc];
     chessState.board[fr][fc] = '.';
-
     if (captured !== '.' && ['k', 'q'].includes(captured.toLowerCase())) {
       chessState.ended = true;
       chessState.winner = chessState.turn;
@@ -230,6 +415,7 @@ function handleSquareClick(r, c) {
   }
   chessState.selected = null;
   renderChess();
+  if (!fromRemote) emitP2P('chess:move', { r, c });
 }
 
 function renderChess() {
@@ -238,46 +424,52 @@ function renderChess() {
     for (let c = 0; c < 8; c++) {
       const sq = document.createElement('button');
       sq.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
-      if (chessState.selected && chessState.selected[0] === r && chessState.selected[1] === c) {
-        sq.classList.add('selected');
-      }
+      if (chessState.selected && chessState.selected[0] === r && chessState.selected[1] === c) sq.classList.add('selected');
       const piece = chessState.board[r][c];
       sq.textContent = piece === '.' ? '' : PIECES[piece];
       sq.addEventListener('click', () => handleSquareClick(r, c));
       chessBoardEl.appendChild(sq);
     }
   }
-  if (chessState.ended) {
-    chessStatus.textContent = `Game tamat: ${chessState.winner} menang (Raja/Ratu lawan tertangkap).`;
-  } else {
-    chessStatus.textContent = `Giliran: ${chessState.turn}`;
-  }
+  chessStatus.textContent = chessState.ended ? `Game tamat: ${chessState.winner} menang.` : `Giliran: ${chessState.turn}`;
 }
 
-document.getElementById('resetChess').addEventListener('click', initChess);
+document.getElementById('resetChess').addEventListener('click', () => {
+  initChess();
+  emitP2P('chess:reset', {});
+});
 initChess();
 
-// Monopoly bank edition (digital banker)
+// --- Monopoly ---
 const players = [];
 const ledger = document.getElementById('bankLedger');
+const bankHistory = document.getElementById('bankHistory');
 const playerName = document.getElementById('playerName');
 const startBalance = document.getElementById('startBalance');
 const fromPlayer = document.getElementById('fromPlayer');
 const toPlayer = document.getElementById('toPlayer');
 const bankPlayer = document.getElementById('bankPlayer');
-const bankHistory = document.getElementById('bankHistory');
 
+function renderMonopolyBoard() {
+  const tiles = ['GO', 'Menteng', 'Dana Umum', 'Stasiun', 'Pajak', 'Bandung', 'Kesempatan', 'Jakarta', 'Parkir', 'Surabaya', 'Penjara', 'Mall', 'Airport', 'Hotel', 'Listrik', 'Jalan Bebas'];
+  const board = document.getElementById('monopolyBoard');
+  board.innerHTML = '';
+  tiles.forEach((t) => {
+    const div = document.createElement('div');
+    div.className = 'mono-tile';
+    div.textContent = t;
+    board.appendChild(div);
+  });
+}
 
 function addHistory(text) {
-  const item = document.createElement('li');
-  item.textContent = text;
-  bankHistory.prepend(item);
+  const li = document.createElement('li');
+  li.textContent = text;
+  bankHistory.prepend(li);
 }
 
 function checkBankrupt(player) {
-  if (player.balance <= 0) {
-    addHistory(`⚠️ ${player.name} bangkrut (saldo: $${player.balance.toFixed(2)})`);
-  }
+  if (player.balance <= 0) addHistory(`⚠️ ${player.name} bangkrut (saldo $${player.balance.toFixed(2)})`);
 }
 
 function refreshSelects() {
@@ -287,40 +479,52 @@ function refreshSelects() {
   ledger.innerHTML = players.map((p) => `<li>${p.name}: $${p.balance.toFixed(2)}</li>`).join('');
 }
 
-document.getElementById('addPlayer').addEventListener('click', () => {
-  const name = playerName.value.trim();
-  const bal = Number(startBalance.value);
-  if (!name || Number.isNaN(bal)) return;
-  players.push({ name, balance: bal });
-  addHistory(`➕ Pemain ${name} ditambahkan dengan saldo awal $${bal.toFixed(2)}`);
-  playerName.value = '';
+function addMonopolyPlayer(name, bal, fromRemote = false) {
+  if (!name || Number.isNaN(Number(bal))) return;
+  players.push({ name, balance: Number(bal) });
+  addHistory(`➕ ${name} masuk game dengan saldo $${Number(bal).toFixed(2)}`);
   refreshSelects();
+  if (!fromRemote) emitP2P('mono:addPlayer', { name, balance: Number(bal) });
+}
+
+function monopolyTransfer(from, to, amount, fromRemote = false) {
+  if ([from, to, amount].some((x) => Number.isNaN(Number(x)))) return;
+  const f = Number(from), t = Number(to), a = Number(amount);
+  if (!players[f] || !players[t] || f === t || a <= 0 || players[f].balance < a) return;
+  players[f].balance -= a;
+  players[t].balance += a;
+  addHistory(`💸 ${players[f].name} transfer $${a.toFixed(2)} ke ${players[t].name}`);
+  checkBankrupt(players[f]);
+  refreshSelects();
+  if (!fromRemote) emitP2P('mono:transfer', { from: f, to: t, amount: a });
+}
+
+function monopolyBankTxn(idx, amount, fromRemote = false) {
+  const i = Number(idx), a = Number(amount);
+  if (!players[i] || Number.isNaN(a)) return;
+  players[i].balance += a;
+  addHistory(`🏦 Bank ${a >= 0 ? 'kredit' : 'debit'} $${Math.abs(a).toFixed(2)} untuk ${players[i].name}`);
+  checkBankrupt(players[i]);
+  refreshSelects();
+  if (!fromRemote) emitP2P('mono:bankTxn', { idx: i, amount: a });
+}
+
+document.getElementById('addPlayer').addEventListener('click', () => {
+  addMonopolyPlayer(playerName.value.trim(), Number(startBalance.value));
+  playerName.value = '';
 });
 
 document.getElementById('transferBtn').addEventListener('click', () => {
-  const from = Number(fromPlayer.value);
-  const to = Number(toPlayer.value);
-  const amount = Number(document.getElementById('transferAmount').value);
-  if ([from, to, amount].some(Number.isNaN) || amount <= 0 || from === to) return;
-  if (!players[from] || !players[to] || players[from].balance < amount) return;
-  players[from].balance -= amount;
-  players[to].balance += amount;
-  addHistory(`💸 ${players[from].name} transfer $${amount.toFixed(2)} ke ${players[to].name}`);
-  checkBankrupt(players[from]);
-  refreshSelects();
+  monopolyTransfer(fromPlayer.value, toPlayer.value, Number(document.getElementById('transferAmount').value));
 });
 
 document.getElementById('bankTxnBtn').addEventListener('click', () => {
-  const idx = Number(bankPlayer.value);
-  const amount = Number(document.getElementById('bankAmount').value);
-  if (Number.isNaN(idx) || Number.isNaN(amount) || !players[idx]) return;
-  players[idx].balance += amount;
-  addHistory(`🏦 Bank transaksi ${amount >= 0 ? 'kredit' : 'debit'} $${Math.abs(amount).toFixed(2)} untuk ${players[idx].name}`);
-  checkBankrupt(players[idx]);
-  refreshSelects();
+  monopolyBankTxn(bankPlayer.value, Number(document.getElementById('bankAmount').value));
 });
 
-// MediaPipe hand avatar + AI learning gesture
+renderMonopolyBoard();
+
+// --- Hand AI ---
 const handVideo = document.getElementById('handVideo');
 const handOverlay = document.getElementById('handOverlay');
 const handStatus = document.getElementById('handStatus');
@@ -334,15 +538,13 @@ let mpHands;
 let cameraStream;
 let trackingActive = false;
 let latestFeature = null;
-let latestGesture = 'unknown';
 
 const AI_STORAGE_KEY = 'gesture-ai-learning-v1';
 let gestureDataset = JSON.parse(localStorage.getItem(AI_STORAGE_KEY) || '{}');
 
 function featureFromLandmarks(landmarks) {
   const wrist = landmarks[0];
-  const tips = [4, 8, 12, 16, 20];
-  return tips.map((idx) => {
+  return [4, 8, 12, 16, 20].map((idx) => {
     const p = landmarks[idx];
     const dx = p.x - wrist.x;
     const dy = p.y - wrist.y;
@@ -353,45 +555,25 @@ function featureFromLandmarks(landmarks) {
 function classifyGesture(feature) {
   let bestLabel = 'unknown';
   let bestDistance = Number.POSITIVE_INFINITY;
-
   Object.entries(gestureDataset).forEach(([label, samples]) => {
     samples.forEach((sample) => {
-      const dist = Math.sqrt(sample.reduce((sum, val, i) => {
-        const d = val - feature[i];
-        return sum + d * d;
-      }, 0));
-      if (dist < bestDistance) {
-        bestDistance = dist;
-        bestLabel = label;
-      }
+      const dist = Math.sqrt(sample.reduce((sum, val, i) => sum + (val - feature[i]) ** 2, 0));
+      if (dist < bestDistance) { bestDistance = dist; bestLabel = label; }
     });
   });
-
-  if (!Number.isFinite(bestDistance) || bestDistance > 0.25) {
-    return 'unknown';
-  }
-  return bestLabel;
+  return (!Number.isFinite(bestDistance) || bestDistance > 0.25) ? 'unknown' : bestLabel;
 }
 
 function renderGestureSamples() {
-  const rows = Object.entries(gestureDataset).map(([label, samples]) => (
-    `<li><b>${label}</b>: ${samples.length} sample</li>`
-  ));
-  gestureSamplesList.innerHTML = rows.join('') || '<li>Belum ada data AI gesture.</li>';
+  gestureSamplesList.innerHTML = Object.entries(gestureDataset)
+    .map(([label, samples]) => `<li><b>${label}</b>: ${samples.length} sample</li>`)
+    .join('') || '<li>Belum ada data AI gesture.</li>';
 }
 
 function animateAvatarByGesture(gesture) {
   avatarMouth.className = 'mouth neutral';
-  if (gesture === 'unknown') return;
-  if (gesture.includes('open') || gesture.includes('five') || gesture.includes('stop')) {
-    avatarMouth.className = 'mouth open';
-    return;
-  }
-  if (gesture.includes('smile') || gesture.includes('ok') || gesture.includes('love')) {
-    avatarMouth.className = 'mouth smile';
-    return;
-  }
-  avatarMouth.className = 'mouth neutral';
+  if (gesture.includes('open') || gesture.includes('five') || gesture.includes('stop')) avatarMouth.className = 'mouth open';
+  else if (gesture.includes('smile') || gesture.includes('ok') || gesture.includes('love')) avatarMouth.className = 'mouth smile';
 }
 
 function drawResults(landmarks) {
@@ -400,22 +582,19 @@ function drawResults(landmarks) {
   handCtx.clearRect(0, 0, handOverlay.width, handOverlay.height);
   handCtx.drawImage(handVideo, 0, 0, handOverlay.width, handOverlay.height);
 
-  if (!landmarks || landmarks.length === 0) {
+  if (!landmarks?.length) {
     latestFeature = null;
-    latestGesture = 'unknown';
     gestureLabel.textContent = 'Gesture terdeteksi: unknown';
     animateAvatarByGesture('unknown');
     return;
   }
-
   const hand = landmarks[0];
   window.drawConnectors(handCtx, hand, window.HAND_CONNECTIONS, { color: '#22c55e', lineWidth: 3 });
   window.drawLandmarks(handCtx, hand, { color: '#ef4444', lineWidth: 2 });
-
   latestFeature = featureFromLandmarks(hand);
-  latestGesture = classifyGesture(latestFeature);
-  gestureLabel.textContent = `Gesture terdeteksi: ${latestGesture}`;
-  animateAvatarByGesture(latestGesture);
+  const label = classifyGesture(latestFeature);
+  gestureLabel.textContent = `Gesture terdeteksi: ${label}`;
+  animateAvatarByGesture(label);
 }
 
 async function startHandTracking() {
@@ -424,50 +603,37 @@ async function startHandTracking() {
     handStatus.textContent = 'Status: MediaPipe gagal dimuat.';
     return;
   }
-
-  handStatus.textContent = 'Status: meminta akses kamera...';
   try {
+    handStatus.textContent = 'Status: meminta akses kamera...';
     cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
     handVideo.srcObject = cameraStream;
     await handVideo.play();
-
-    mpHands = new window.Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-    });
-    mpHands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.5,
-    });
-    mpHands.onResults((results) => drawResults(results.multiHandLandmarks));
-
+    mpHands = new window.Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+    mpHands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
+    mpHands.onResults((res) => drawResults(res.multiHandLandmarks));
     trackingActive = true;
     handStatus.textContent = 'Status: hand tracking aktif';
 
-    const processFrame = async () => {
+    const loop = async () => {
       if (!trackingActive) return;
       await mpHands.send({ image: handVideo });
-      requestAnimationFrame(processFrame);
+      requestAnimationFrame(loop);
     };
-    processFrame();
-  } catch (error) {
-    handStatus.textContent = `Status: gagal (${error.message})`;
+    loop();
+  } catch (err) {
+    handStatus.textContent = `Status: gagal (${err.message})`;
   }
 }
 
 function stopHandTracking() {
   trackingActive = false;
-  if (cameraStream) {
-    cameraStream.getTracks().forEach((track) => track.stop());
-    cameraStream = null;
-  }
+  cameraStream?.getTracks().forEach((t) => t.stop());
+  cameraStream = null;
   handStatus.textContent = 'Status: idle';
 }
 
 document.getElementById('startHandTracking').addEventListener('click', startHandTracking);
 document.getElementById('stopHandTracking').addEventListener('click', stopHandTracking);
-
 document.getElementById('saveGestureBtn').addEventListener('click', () => {
   const label = gestureNameInput.value.trim().toLowerCase();
   if (!label || !latestFeature) {
@@ -480,12 +646,10 @@ document.getElementById('saveGestureBtn').addEventListener('click', () => {
   handStatus.textContent = `Status: sample gesture "${label}" tersimpan.`;
   renderGestureSamples();
 });
-
 document.getElementById('clearGestureBtn').addEventListener('click', () => {
   gestureDataset = {};
   localStorage.setItem(AI_STORAGE_KEY, JSON.stringify(gestureDataset));
   handStatus.textContent = 'Status: semua data AI gesture dihapus.';
   renderGestureSamples();
 });
-
 renderGestureSamples();

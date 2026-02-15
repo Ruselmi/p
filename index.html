@@ -3,31 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Game Hub: UNO, Catur, Monopoly Bank</title>
+    <title>Game Hub HD: UNO, Catur, Monopoly, Hand AI</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="hero">
-      <h1>🎮 Game Hub</h1>
-      <p>Mainkan UNO, Catur, Monopoly Bank Edition, dan Hand Avatar AI dalam satu halaman.</p>
+      <h1>🎮 Game Hub HD</h1>
+      <p>UNO Flip/Mercy, Catur, Monopoly Board, Hand Avatar AI, dan multiplayer P2P antar device.</p>
     </header>
 
+    <section class="p2p-box">
+      <h2>🌐 Opsi Main Online P2P (PeerJS)</h2>
+      <div class="panel-row">
+        <button id="createRoomBtn">Buat Room (4 kode)</button>
+        <input id="joinCodeInput" maxlength="4" placeholder="kode room" />
+        <button id="joinRoomBtn">Gabung Room</button>
+        <button id="leaveRoomBtn">Keluar Room</button>
+      </div>
+      <p id="p2pStatus" class="status-pill">Offline</p>
+      <p class="hint">Host + maksimal 3 client (total 4 pemain). Bisa antar device dalam internet.</p>
+    </section>
+
     <nav class="tabs">
-      <button class="tab-btn active" data-tab="uno">UNO</button>
-      <button class="tab-btn" data-tab="chess">Catur</button>
-      <button class="tab-btn" data-tab="monopoly">Monopoly Bank Edition</button>
+      <button class="tab-btn active" data-tab="uno">UNO HD</button>
+      <button class="tab-btn" data-tab="chess">Catur HD</button>
+      <button class="tab-btn" data-tab="monopoly">Monopoly Board HD</button>
       <button class="tab-btn" data-tab="hand-ai">Hand Avatar AI</button>
     </nav>
 
     <main>
       <section id="uno" class="tab active">
-        <h2>UNO Arena</h2>
+        <h2>UNO HD Arena</h2>
         <div class="panel-row card-panel">
           <label for="unoMode">Mode UNO:</label>
           <select id="unoMode">
             <option value="classic">Classic</option>
-            <option value="flip">Flip</option>
-            <option value="mercy">Mercy</option>
+            <option value="flip">Flip (1 kartu 2 data)</option>
+            <option value="mercy">Mercy (+10 / +8)</option>
             <option value="fkk">FKK</option>
           </select>
           <button id="startUno">Mulai Ulang UNO</button>
@@ -44,6 +56,10 @@
             <h3>Tangan Bot</h3>
             <div id="unoBotCount">0 kartu</div>
           </article>
+          <article class="info-card">
+            <h3>Sisi Aktif Flip</h3>
+            <div id="unoSideBadge" class="status-pill">FRONT</div>
+          </article>
         </div>
 
         <h3>Tangan Kamu</h3>
@@ -52,15 +68,15 @@
         <details class="rules-box">
           <summary>Hukum / Cara Main UNO</summary>
           <ul>
-            <li>Mainkan kartu sesuai warna atau angka/simbol kartu atas.</li>
-            <li>Mode Mercy: pemain yang mencapai 25 kartu dinyatakan kalah.</li>
-            <li>Mode FKK: saat tangan mencapai 15 kartu, otomatis kena tambah kartu.</li>
+            <li>Mode Flip: satu kartu punya 2 data (front/back). Jika kartu <b>flip</b> keluar, sisi permainan dibalik.</li>
+            <li>Mode Mercy: tombol draw memberi penalti <b>+10</b> ke kamu, jika bot draw penalti <b>+8</b> ke bot.</li>
+            <li>Kartu dimainkan jika warna/angka cocok dengan kartu atas pada sisi aktif.</li>
           </ul>
         </details>
       </section>
 
       <section id="chess" class="tab">
-        <h2>Catur Battle</h2>
+        <h2>Catur HD Battle</h2>
         <div class="panel-row card-panel">
           <button id="resetChess">Reset Catur</button>
           <span id="chessStatus" class="status-pill"></span>
@@ -70,15 +86,17 @@
         <details class="rules-box">
           <summary>Hukum / Cara Main Catur (Versi Game Ini)</summary>
           <ul>
-            <li>Langkah bidak dasar valid (pawn, knight, bishop, rook, queen, king).</li>
-            <li>Jika <b>Raja</b> atau <b>Ratu</b> tertangkap, game langsung tamat.</li>
-            <li>Belum menerapkan check/checkmate resmi FIDE.</li>
+            <li>Langkah dasar bidak valid (pawn, knight, bishop, rook, queen, king).</li>
+            <li>Jika Raja atau Ratu tertangkap maka game tamat.</li>
+            <li>Bisa dimainkan P2P: langkah sinkron antar device.</li>
           </ul>
         </details>
       </section>
 
       <section id="monopoly" class="tab">
-        <h2>Monopoly Bank Edition</h2>
+        <h2>Monopoly Bank + Board HD</h2>
+        <div id="monopolyBoard" class="mono-board"></div>
+
         <div class="panel-row card-panel">
           <input id="playerName" placeholder="Nama pemain" />
           <input id="startBalance" type="number" placeholder="Saldo awal" value="1500" />
@@ -92,7 +110,7 @@
         </div>
         <div class="panel-row card-panel">
           <select id="bankPlayer"></select>
-          <input id="bankAmount" type="number" placeholder="+ untuk kredit, - untuk debit" />
+          <input id="bankAmount" type="number" placeholder="+ kredit, - debit" />
           <button id="bankTxnBtn">Transaksi Bank</button>
         </div>
 
@@ -104,9 +122,9 @@
         <details class="rules-box">
           <summary>Hukum / Cara Main Monopoly Bank Edition</summary>
           <ul>
-            <li>Banker bisa kredit/debit saldo pemain sesuai kejadian game board.</li>
-            <li>Transfer antar pemain hanya jika saldo pengirim cukup.</li>
-            <li>Saldo ≤ 0 dianggap bangkrut (dicatat di riwayat).</li>
+            <li>Board ditampilkan visual HD 16 tile utama.</li>
+            <li>Banker bisa kredit/debit; transfer antar pemain jika saldo cukup.</li>
+            <li>Saldo ≤ 0 dianggap bangkrut dan dicatat.</li>
           </ul>
         </details>
       </section>
@@ -125,14 +143,10 @@
             <video id="handVideo" autoplay playsinline muted></video>
             <canvas id="handOverlay"></canvas>
           </div>
-
           <div class="info-card">
             <h3>Avatar Animate</h3>
             <div id="avatarFace" class="avatar-face">
-              <div class="eyes">
-                <span class="eye"></span>
-                <span class="eye"></span>
-              </div>
+              <div class="eyes"><span class="eye"></span><span class="eye"></span></div>
               <div id="avatarMouth" class="mouth neutral"></div>
             </div>
             <p id="gestureLabel">Gesture terdeteksi: -</p>
@@ -141,7 +155,7 @@
 
         <h3>AI Learning Gesture</h3>
         <div class="panel-row card-panel">
-          <input id="gestureName" placeholder="Nama gesture (contoh: rock)" />
+          <input id="gestureName" placeholder="Nama gesture" />
           <button id="saveGestureBtn">Simpan Gesture Saat Ini</button>
           <button id="clearGestureBtn">Hapus Semua Data AI</button>
         </div>
@@ -149,6 +163,7 @@
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>

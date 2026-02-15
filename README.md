@@ -1,29 +1,22 @@
-# Game Hub
+# Game Hub HD
 
-Proyek ini berisi kumpulan mini game berbasis web:
+Web app mini game dengan tampilan HD:
 
-- **UNO** dengan mode **Classic**, **Flip**, **Mercy**, dan **FKK**.
-- **Catur** 2 pemain lokal dengan validasi langkah dasar.
-- **Monopoly (Bank Edition)** untuk mencatat saldo pemain, transfer, dan transaksi bank.
-- **Hand Avatar AI** berbasis MediaPipe Hands.
+- **UNO HD**: Classic, Flip (1 kartu 2 data front/back), Mercy (+10/+8), FKK.
+- **Catur HD**: langkah dasar + game tamat saat raja/ratu tertangkap.
+- **Monopoly Bank + Board HD**: board visual, saldo pemain, transfer, transaksi bank, riwayat.
+- **Hand Avatar AI**: MediaPipe hand tracking + avatar animasi + AI learning gesture.
+- **PeerJS P2P**: opsi main online antar device/internet dengan kode room 4 karakter (maks 4 pemain: host + 3 client).
 
-## Update terbaru
-
-- UI UNO, Catur, dan Monopoly dibuat lebih rapi (card panel, status pill, rule box).
-- Ditambahkan panel **Hukum / Cara Main** di UNO, Catur, dan Monopoly.
-- Catur: jika **Raja** atau **Ratu** tertangkap, game langsung **tamat**.
-- Monopoly: ditambahkan **riwayat transaksi** dan penanda **bangkrut** saat saldo <= 0.
-
-## Menjalankan
-
-Cukup buka `index.html` di browser.
-
-Atau jalankan server lokal sederhana:
+## Cara Jalan
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Lalu akses `http://localhost:8000`.
+Lalu buka `http://localhost:8000`.
 
-> Catatan: fitur Hand Avatar AI butuh izin kamera dan koneksi internet untuk memuat CDN MediaPipe.
+## Catatan
+
+- Fitur PeerJS dan MediaPipe memakai CDN internet.
+- Untuk mode online, pastikan semua device punya koneksi internet stabil.
