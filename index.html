@@ -43,6 +43,11 @@
             <option value="mercy">Mercy (+10 / +8)</option>
             <option value="fkk">FKK</option>
           </select>
+          <label for="unoOpponentMode">Lawan:</label>
+          <select id="unoOpponentMode">
+            <option value="bot" selected>Bot</option>
+            <option value="local">2 Player Offline</option>
+          </select>
           <label for="unoDifficulty">Bot:</label>
           <select id="unoDifficulty">
             <option value="easy">Easy</option>
@@ -69,7 +74,7 @@
         </div>
 
         <div class="uno-table">
-          <div class="uno-seat">🤖 Bot <span id="unoBotCount">0 kartu</span></div>
+          <div id="unoOpponentLabel" class="uno-seat">🤖 Bot <span id="unoBotCount">0 kartu</span></div>
           <div class="uno-center">
             <div class="pile-wrap">
               <h3>Draw Pile</h3>
@@ -87,8 +92,10 @@
           <div class="uno-seat player">🧑 Kamu</div>
         </div>
 
-        <h3>Tangan Kamu</h3>
+        <h3>Tangan Kamu (Player 1)</h3>
         <div id="unoHand" class="hand"></div>
+        <h3 id="unoP2Title" class="hidden">Tangan Player 2</h3>
+        <div id="unoHandP2" class="hand hidden"></div>
 
         <details class="rules-box">
           <summary>Hukum / Cara Main UNO</summary>
@@ -190,6 +197,7 @@
         </div>
         <ul id="gestureSamples"></ul>
       </section>
+      <div id="globalFxOverlay" class="global-fx-overlay"></div>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>

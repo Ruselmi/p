@@ -183,10 +183,14 @@ updateRoomBadge('-');
 // --- UNO HD ---
 const unoMode = document.getElementById('unoMode');
 const unoDifficulty = document.getElementById('unoDifficulty');
+const unoOpponentMode = document.getElementById('unoOpponentMode');
 const unoStatus = document.getElementById('unoStatus');
 const unoTopCard = document.getElementById('unoTopCard');
 const unoBotCount = document.getElementById('unoBotCount');
 const unoHand = document.getElementById('unoHand');
+const unoHandP2 = document.getElementById('unoHandP2');
+const unoP2Title = document.getElementById('unoP2Title');
+const unoOpponentLabel = document.getElementById('unoOpponentLabel');
 const unoSideBadge = document.getElementById('unoSideBadge');
 const unoDrawPile = document.getElementById('unoDrawPile');
 const unoColorPicker = document.getElementById('unoColorPicker');
@@ -196,6 +200,7 @@ const unoRound = document.getElementById('unoRound');
 const unoScorePlayer = document.getElementById('unoScorePlayer');
 const unoScoreBot = document.getElementById('unoScoreBot');
 const unoTimer = document.getElementById('unoTimer');
+const globalFxOverlay = document.getElementById('globalFxOverlay');
 
 const unoMeta = { scorePlayer: 0, scoreBot: 0, round: 1 };
 let unoTimerHandle = null;
@@ -345,8 +350,30 @@ function resolveUnoCardEffect(face, actor, done) {
 
 function updateUnoMetaUI() {
   unoRound.textContent = `Round: ${unoMeta.round}`;
-  unoScorePlayer.textContent = `Kamu: ${unoMeta.scorePlayer}`;
-  unoScoreBot.textContent = `Bot: ${unoMeta.scoreBot}`;
+  unoScorePlayer.textContent = `P1: ${unoMeta.scorePlayer}`;
+  unoScoreBot.textContent = `${unoState?.opponentMode === 'local' ? 'P2' : 'Bot'}: ${unoMeta.scoreBot}`;
+}
+
+function currentActor() {
+  return unoState.turn === 'p1' ? 'player' : (unoState.opponentMode === 'local' ? 'p2' : 'bot');
+}
+
+function handByTurn() {
+  return unoState.turn === 'p1' ? unoState.player : unoState.opponent;
+}
+
+function spawnGlobalFx(count) {
+  if (!globalFxOverlay) return;
+  const emojis = ['✨', '🎈', '🃏', '🔥', '⭐'];
+  for (let i = 0; i < Math.min(count, 8); i++) {
+    const e = document.createElement('span');
+    e.className = 'global-fx-item';
+    e.textContent = emojis[(i + count) % emojis.length];
+    e.style.left = `${5 + Math.random() * 90}%`;
+    e.style.top = `${40 + Math.random() * 45}%`;
+    globalFxOverlay.appendChild(e);
+    setTimeout(() => e.remove(), 1500);
+  }
 }
 
 function startUno(forcedMode = null) {
@@ -359,7 +386,7 @@ function startUno(forcedMode = null) {
     deck,
     discard: [],
     player: [],
-    bot: [],
+    opponent: [],
     top: null,
     ended: false,
     side: 'front',
@@ -368,68 +395,80 @@ function startUno(forcedMode = null) {
     pendingType: null,
     unoCalled: false,
     turnTimer: 20,
+    turn: 'p1',
+    opponentMode: unoOpponentMode.value,
   };
-  for (let i = 0; i < startCards; i++) { drawCard(unoState.player); drawCard(unoState.bot); }
+  for (let i = 0; i < startCards; i++) { drawCard(unoState.player); drawCard(unoState.opponent); }
   unoState.top = unoState.deck.pop();
   unoState.discard.push(unoState.top);
   const firstFace = getCardFace(unoState.top);
   if (firstFace.color === 'wild') unoState.chosenColor = randomUnoColor();
-  logUno(`Round ${unoMeta.round} dimulai (${mode}).`);
+  unoOpponentLabel.innerHTML = `${unoState.opponentMode === 'local' ? '🧑 Player 2' : '🤖 Bot'} <span id="unoBotCount">0 kartu</span>`;
+  logUno(`Round ${unoMeta.round} dimulai (${mode}) - ${unoState.opponentMode === 'local' ? '2 Player Offline' : 'Bot'}.`);
   renderUno();
   beginTurnTimer();
   emitP2P('uno:start', { mode });
 }
 
+function maybeAutoOpponentTurn() {
+  if (unoState.opponentMode === 'bot' && unoState.turn === 'p2' && !unoState.ended) {
+    setTimeout(() => botTurn(), 400);
+  }
+}
+
+function switchTurn(skip = false) {
+  if (skip) return;
+  unoState.turn = unoState.turn === 'p1' ? 'p2' : 'p1';
+}
+
 function botTurn(chain = 0) {
   if (unoState.ended || chain > 4) return;
-  const idxs = unoState.bot.map((c, i) => canPlay(c, unoState.top) ? i : -1).filter((x) => x >= 0);
+  unoState.turn = 'p2';
+  const idxs = unoState.opponent.map((c, i) => canPlay(c, unoState.top) ? i : -1).filter((x) => x >= 0);
   if (!idxs.length) {
     const drawN = unoState.pendingDraw > 0 ? unoState.pendingDraw : 1;
-    drawMultiple(unoState.bot, drawN);
+    drawMultiple(unoState.opponent, drawN);
     unoState.pendingDraw = 0;
     unoState.pendingType = null;
     logUno(`Bot draw ${drawN}`);
-  } else {
-    let idx = idxs[0];
-    if (unoDifficulty.value === 'hard') {
-      idx = idxs.find((i) => ['wild+4', '+10', '+8', '+2'].includes(getCardFace(unoState.bot[i]).value)) ?? idxs[0];
-    } else if (unoDifficulty.value === 'normal') {
-      idx = idxs[Math.floor(Math.random() * idxs.length)];
-    }
-    const played = unoState.bot.splice(idx, 1)[0];
-    unoState.top = played;
-    unoState.discard.push(played);
-    const face = getCardFace(played);
-    if (unoState.mode === 'flip' && face.value === 'flip') unoState.side = unoState.side === 'front' ? 'back' : 'front';
-
-    resolveUnoCardEffect(face, 'bot', (effect) => {
-      logUno(`Bot main ${face.value}`);
-      if (applySpecialRules(unoState.player, 'player') || applySpecialRules(unoState.bot, 'bot')) return renderUno();
-      if (!unoState.bot.length) {
-        unoState.ended = true;
-        unoMeta.scoreBot += 1;
-        unoStatus.textContent = 'Bot menang!';
-        updateUnoMetaUI();
-        return renderUno();
-      }
-      if (effect.skipOpponent) return botTurn(chain + 1);
-      renderUno();
-      beginTurnTimer();
-    });
+    unoState.turn = 'p1';
+    renderUno();
+    beginTurnTimer();
     return;
   }
 
-  if (applySpecialRules(unoState.bot, 'bot')) {
-    unoMeta.scorePlayer += 1;
-    updateUnoMetaUI();
-  }
-  renderUno();
-  beginTurnTimer();
+  let idx = idxs[0];
+  if (unoDifficulty.value === 'hard') idx = idxs.find((i) => ['wild+4', '+10', '+8', '+2'].includes(getCardFace(unoState.opponent[i]).value)) ?? idxs[0];
+  else if (unoDifficulty.value === 'normal') idx = idxs[Math.floor(Math.random() * idxs.length)];
+
+  const played = unoState.opponent.splice(idx, 1)[0];
+  unoState.top = played;
+  unoState.discard.push(played);
+  const face = getCardFace(played);
+  if (unoState.mode === 'flip' && face.value === 'flip') unoState.side = unoState.side === 'front' ? 'back' : 'front';
+
+  resolveUnoCardEffect(face, 'bot', (effect) => {
+    logUno(`Bot main ${face.value}`);
+    spawnGlobalFx(3);
+    if (applySpecialRules(unoState.player, 'player') || applySpecialRules(unoState.opponent, 'bot')) return renderUno();
+    if (!unoState.opponent.length) {
+      unoState.ended = true;
+      unoMeta.scoreBot += 1;
+      unoStatus.textContent = 'Bot menang!';
+      updateUnoMetaUI();
+      return renderUno();
+    }
+    if (effect.skipOpponent) return botTurn(chain + 1);
+    unoState.turn = 'p1';
+    renderUno();
+    beginTurnTimer();
+  });
 }
 
 function maybeUnoPenalty() {
-  if (unoState.player.length === 1 && !unoState.unoCalled) {
-    drawMultiple(unoState.player, 2);
+  const hand = handByTurn();
+  if (hand.length === 1 && !unoState.unoCalled) {
+    drawMultiple(hand, 2);
     logUno('Penalty: lupa tekan UNO! +2 kartu');
   }
   unoState.unoCalled = false;
@@ -437,36 +476,41 @@ function maybeUnoPenalty() {
 
 function playerPlay(index, fromRemote = false) {
   if (unoState.ended) return;
-  const card = unoState.player[index];
+  const actor = currentActor();
+  if (actor === 'bot') return;
+  const hand = handByTurn();
+  const card = hand[index];
   if (!card || !canPlay(card, unoState.top)) return;
   clearInterval(unoTimerHandle);
 
-  const played = unoState.player.splice(index, 1)[0];
+  const played = hand.splice(index, 1)[0];
   unoState.top = played;
   unoState.discard.push(played);
   const face = getCardFace(played);
   if (unoState.mode === 'flip' && face.value === 'flip') unoState.side = unoState.side === 'front' ? 'back' : 'front';
 
-  resolveUnoCardEffect(face, 'player', (effect) => {
-    logUno(`Kamu main ${face.value}`);
-    if (!unoState.player.length) {
+  resolveUnoCardEffect(face, actor === 'player' ? 'player' : 'bot', (effect) => {
+    logUno(`${actor === 'player' ? 'P1' : 'P2'} main ${face.value}`);
+    spawnGlobalFx(2);
+    if (!hand.length) {
       unoState.ended = true;
-      unoMeta.scorePlayer += 1;
-      unoStatus.textContent = 'Kamu menang!';
+      if (actor === 'player') unoMeta.scorePlayer += 1;
+      else unoMeta.scoreBot += 1;
+      unoStatus.textContent = `${actor === 'player' ? 'P1' : 'P2'} menang!`;
       updateUnoMetaUI();
       return renderUno();
     }
 
     maybeUnoPenalty();
-    if (applySpecialRules(unoState.bot, 'bot') || applySpecialRules(unoState.player, 'player')) {
-      if (unoState.ended && unoStatus.textContent.includes('bot')) unoMeta.scorePlayer += 1;
+    if (applySpecialRules(unoState.player, 'player') || applySpecialRules(unoState.opponent, 'bot')) {
       updateUnoMetaUI();
       return renderUno();
     }
 
+    switchTurn(effect.skipOpponent);
     renderUno();
-    if (!effect.skipOpponent) botTurn();
-    else beginTurnTimer();
+    beginTurnTimer();
+    maybeAutoOpponentTurn();
   });
 
   if (!fromRemote) emitP2P('uno:play', { index });
@@ -475,13 +519,16 @@ function playerPlay(index, fromRemote = false) {
 function handleUnoDraw(fromRemote = false) {
   if (unoState.ended) return;
   clearInterval(unoTimerHandle);
+  const hand = handByTurn();
   const drawN = unoState.pendingDraw > 0 ? unoState.pendingDraw : 1;
-  drawMultiple(unoState.player, drawN);
+  drawMultiple(hand, drawN);
   unoState.pendingDraw = 0;
   unoState.pendingType = null;
-  logUno(`Kamu draw ${drawN}`);
+  logUno(`${unoState.turn.toUpperCase()} draw ${drawN}`);
+  switchTurn(false);
   renderUno();
-  botTurn();
+  beginTurnTimer();
+  maybeAutoOpponentTurn();
   if (!fromRemote) emitP2P('uno:draw', {});
 }
 
@@ -490,24 +537,32 @@ function renderUno() {
   const shownColor = currentTopColor();
   unoTopCard.textContent = `${shownColor} ${topFace.value}`;
   unoTopCard.style.background = COLORS[shownColor] || '#111827';
-  unoBotCount.textContent = `${unoState.bot.length} kartu`;
+  document.getElementById('unoBotCount').textContent = `${unoState.opponent.length} kartu`;
   unoDrawPile.textContent = `${unoState.deck.length} kartu`;
   unoSideBadge.textContent = unoState.mode === 'flip' ? unoState.side.toUpperCase() : (unoState.chosenColor || 'N/A').toUpperCase();
-  unoHand.innerHTML = '';
+  unoP2Title.classList.toggle('hidden', unoState.opponentMode !== 'local');
+  unoHandP2.classList.toggle('hidden', unoState.opponentMode !== 'local');
 
-  unoState.player.forEach((card, i) => {
-    const f = getCardFace(card);
-    const playable = canPlay(card, unoState.top);
-    const btn = document.createElement('button');
-    btn.className = `play-card ${playable ? 'playable' : ''}`;
-    btn.style.background = COLORS[f.color] || '#111827';
-    btn.textContent = unoState.mode === 'flip' ? `${card.front.value}/${card.back.value} (${f.color})` : `${f.color} ${f.value}`;
-    btn.onclick = () => playerPlay(i);
-    unoHand.appendChild(btn);
-  });
+  const renderHand = (el, cards, isActive) => {
+    el.innerHTML = '';
+    cards.forEach((card, i) => {
+      const f = getCardFace(card);
+      const playable = isActive && canPlay(card, unoState.top);
+      const btn = document.createElement('button');
+      btn.className = `play-card ${playable ? 'playable' : ''}`;
+      btn.style.background = COLORS[f.color] || '#111827';
+      btn.textContent = unoState.mode === 'flip' ? `${card.front.value}/${card.back.value} (${f.color})` : `${f.color} ${f.value}`;
+      btn.onclick = () => playerPlay(i);
+      el.appendChild(btn);
+    });
+  };
+
+  renderHand(unoHand, unoState.player, unoState.turn === 'p1');
+  if (unoState.opponentMode === 'local') renderHand(unoHandP2, unoState.opponent, unoState.turn === 'p2');
 
   if (!unoState.ended) {
-    unoStatus.textContent = `Mode ${unoState.mode.toUpperCase()} | Giliran kamu${unoState.pendingDraw ? ` | Stack: ${unoState.pendingType} (${unoState.pendingDraw})` : ''}`;
+    const turnName = unoState.turn === 'p1' ? 'P1' : (unoState.opponentMode === 'local' ? 'P2' : 'Bot');
+    unoStatus.textContent = `Mode ${unoState.mode.toUpperCase()} | Turn: ${turnName}${unoState.pendingDraw ? ` | Stack: ${unoState.pendingType} (${unoState.pendingDraw})` : ''}`;
   }
 }
 
@@ -519,9 +574,9 @@ document.getElementById('startUno').addEventListener('click', () => {
 document.getElementById('unoDraw').addEventListener('click', () => handleUnoDraw());
 unoDrawPile.addEventListener('click', () => handleUnoDraw());
 unoCallBtn.addEventListener('click', () => {
-  if (unoState.player.length === 1) {
+  if (handByTurn().length === 1) {
     unoState.unoCalled = true;
-    logUno('Kamu teriak UNO!');
+    logUno(`${unoState.turn.toUpperCase()} teriak UNO!`);
   }
 });
 window.addEventListener('keydown', (e) => {
@@ -823,6 +878,7 @@ function countOpenFingers(landmarks) {
 
 function clearFx() {
   handFxStage.innerHTML = '';
+  if (globalFxOverlay) globalFxOverlay.innerHTML = '';
 }
 
 function spawnSticker(count) {
@@ -834,6 +890,16 @@ function spawnSticker(count) {
     el.style.left = `${10 + Math.random() * 80}%`;
     el.style.bottom = `${Math.random() * 30}px`;
     handFxStage.appendChild(el);
+
+    if (globalFxOverlay) {
+      const ge = document.createElement('span');
+      ge.className = 'global-fx-item';
+      ge.textContent = emojis[(i + count + 1) % emojis.length];
+      ge.style.left = `${5 + Math.random() * 90}%`;
+      ge.style.top = `${20 + Math.random() * 70}%`;
+      globalFxOverlay.appendChild(ge);
+      setTimeout(() => ge.remove(), 1500);
+    }
   }
 }
 
@@ -853,11 +919,31 @@ function applyHandFxByCount(count) {
     const h = document.createElement('div');
     h.className = 'fx-blackhole';
     handFxStage.appendChild(h);
+    if (globalFxOverlay) {
+      const gh = document.createElement('div');
+      gh.className = 'fx-blackhole';
+      gh.style.left = 'calc(50% - 120px)';
+      gh.style.top = 'calc(50% - 120px)';
+      gh.style.width = '240px';
+      gh.style.height = '240px';
+      globalFxOverlay.appendChild(gh);
+      setTimeout(() => gh.remove(), 1200);
+    }
     fxCooldown = 12;
   } else if (count === 4) {
     const h = document.createElement('div');
     h.className = 'fx-whitehole';
     handFxStage.appendChild(h);
+    if (globalFxOverlay) {
+      const gw = document.createElement('div');
+      gw.className = 'fx-whitehole';
+      gw.style.left = 'calc(50% - 120px)';
+      gw.style.top = 'calc(50% - 120px)';
+      gw.style.width = '240px';
+      gw.style.height = '240px';
+      globalFxOverlay.appendChild(gw);
+      setTimeout(() => gw.remove(), 1200);
+    }
     fxCooldown = 12;
   } else if (count === 5) {
     avatarFace.classList.add('pulse');

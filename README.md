@@ -47,3 +47,9 @@ Lalu buka `http://localhost:8000`.
 - Gesture jari 4: efek whitehole animasi.
 - Gesture jari 5: avatar pulse + stiker.
 - Gesture jari 6 ke atas: combo blackhole + whitehole + stiker.
+
+
+## Update terbaru tambahan
+- UNO sekarang bisa pilih **lawan Bot** atau **2 Player Offline**.
+- Layout UNO HD dibuat lebih jelas, draw/discard tampil seperti tumpukan kartu nyata.
+- Efek Hand AI sekarang tampil juga di **seluruh layar** (fullscreen overlay) selain panel FX lokal.

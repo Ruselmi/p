@@ -249,3 +249,40 @@ ul { padding-left: 1.1rem; }
   50% { transform: scale(1.08); }
   100% { transform: scale(1); }
 }
+
+
+#unoDrawPile, #unoTopCard { position: relative; }
+#unoDrawPile::before, #unoTopCard::before {
+  content: '';
+  position: absolute;
+  inset: 6px -10px -6px 10px;
+  border-radius: 0.6rem;
+  background: #0006;
+  z-index: -1;
+}
+#unoDrawPile::after, #unoTopCard::after {
+  content: '';
+  position: absolute;
+  inset: 12px -18px -12px 18px;
+  border-radius: 0.6rem;
+  background: #0004;
+  z-index: -2;
+}
+#unoHandP2 { background: #1f2937; }
+.global-fx-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: hidden;
+}
+.global-fx-item {
+  position: absolute;
+  animation: globalFly 1.4s ease-out forwards;
+  font-size: 2rem;
+}
+@keyframes globalFly {
+  from { transform: translateY(120px) scale(0.7); opacity: 0; }
+  15% { opacity: 1; }
+  to { transform: translateY(-220px) scale(1.25); opacity: 0; }
+}
