@@ -62,6 +62,7 @@ Lalu buka `http://localhost:8000`.
 
 
 ## Update Three.js + Transformer.js (Hand AI HD)
+- Transformer.js sekarang punya mode **Cadangan Cepat** (ringan), **Full Model**, dan **Off**.
 - Mode pertunjukan fullscreen sekarang memakai partikel HD (tanpa emoji besar).
 - Integrasi **Three.js** untuk animasi 3D realtime pada panel Hand AI.
 - Integrasi **Transformer.js** (Xenova Transformers) untuk warmup AI model dan status readiness di UI.

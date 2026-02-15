@@ -818,6 +818,7 @@ const fingerCountLabel = document.getElementById('fingerCountLabel');
 const handFxStage = document.getElementById('handFxStage');
 const threeFxCanvas = document.getElementById('threeFxCanvas');
 const aiModelStatus = document.getElementById('aiModelStatus');
+const aiEngineMode = document.getElementById('aiEngineMode');
 const gestureNameInput = document.getElementById('gestureName');
 const gestureSamplesList = document.getElementById('gestureSamples');
 const avatarMouth = document.getElementById('avatarMouth');
@@ -832,6 +833,7 @@ let fxCooldown = 0;
 let horrorEnabled = true;
 let threeScene; let threeCamera; let threeRenderer; let threeMesh; let threeParticles = [];
 let transformerLoaded = false;
+let transformerEngine = null;
 
 
 
@@ -895,20 +897,54 @@ function runTenAnimations(count) {
   if (count >= 10) { handFxStage.classList.add('horror-fog'); avatarFace.classList.add('horror'); spawnSticker(8); burstThree(0xf8fafc); }
 }
 
+function fallbackSentiment(text) {
+  const t = (text || '').toLowerCase();
+  const pos = ['ready', 'good', 'great', 'ok', 'smooth'];
+  const neg = ['error', 'fail', 'lag', 'bad', 'slow'];
+  const ps = pos.filter((w) => t.includes(w)).length;
+  const ns = neg.filter((w) => t.includes(w)).length;
+  return ps >= ns ? [{ label: 'POSITIVE', score: 0.51 }] : [{ label: 'NEGATIVE', score: 0.51 }];
+}
+
 async function initTransformerLite() {
-  if (transformerLoaded) return;
+  const mode = aiEngineMode?.value || 'fallback';
+
+  if (mode === 'off') {
+    transformerLoaded = false;
+    transformerEngine = null;
+    aiModelStatus.textContent = 'Transformer.js: OFF';
+    return;
+  }
+
+  if (mode === 'fallback') {
+    transformerLoaded = false;
+    transformerEngine = fallbackSentiment;
+    aiModelStatus.textContent = 'Transformer.js: Cadangan Cepat aktif';
+    return;
+  }
+
+  if (transformerLoaded && transformerEngine) return;
+
   try {
-    if (!window.transformersBridge?.pipeline) {
-      aiModelStatus.textContent = 'Transformer.js: bridge belum siap';
+    if (!window.transformersBridge?.createSentimentPipeline) {
+      aiModelStatus.textContent = 'Transformer.js: bridge belum siap, fallback aktif';
+      transformerEngine = fallbackSentiment;
       return;
     }
-    // lightweight warmup call
-    const classifier = await window.transformersBridge.pipeline('sentiment-analysis', 'Xenova/distilbert-base-uncased-finetuned-sst-2-english');
+
+    aiModelStatus.textContent = 'Transformer.js: loading full model...';
+    const classifier = await Promise.race([
+      window.transformersBridge.createSentimentPipeline('full'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4500)),
+    ]);
     const out = await classifier('hand animation ready');
+    transformerEngine = classifier;
     aiModelStatus.textContent = `Transformer.js: ready (${out[0].label})`;
     transformerLoaded = true;
   } catch (e) {
-    aiModelStatus.textContent = 'Transformer.js: gagal load model';
+    transformerEngine = fallbackSentiment;
+    transformerLoaded = false;
+    aiModelStatus.textContent = 'Transformer.js: fallback aktif (lebih ringan)';
   }
 }
 
@@ -1137,6 +1173,7 @@ document.getElementById('startHandTracking').addEventListener('click', startHand
 document.getElementById('stopHandTracking').addEventListener('click', stopHandTracking);
 handViewMode.addEventListener('change', applyHandViewMode);
 horrorModeToggle.addEventListener('change', () => { horrorEnabled = horrorModeToggle.checked; if (!horrorEnabled) { handFxStage.classList.remove('horror-fog'); avatarFace.classList.remove('horror'); } });
+aiEngineMode.addEventListener('change', () => { initTransformerLite(); });
 document.getElementById('saveGestureBtn').addEventListener('click', () => {
   const label = gestureNameInput.value.trim().toLowerCase();
   if (!label || !latestFeature) {
@@ -1156,4 +1193,5 @@ document.getElementById('clearGestureBtn').addEventListener('click', () => {
   renderGestureSamples();
 });
 applyHandViewMode();
+initTransformerLite();
 renderGestureSamples();
