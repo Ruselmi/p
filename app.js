@@ -187,6 +187,7 @@ const unoTopCard = document.getElementById('unoTopCard');
 const unoBotCount = document.getElementById('unoBotCount');
 const unoHand = document.getElementById('unoHand');
 const unoSideBadge = document.getElementById('unoSideBadge');
+const unoDrawPile = document.getElementById('unoDrawPile');
 let unoState;
 
 function makeFlipDual(valueFront, colorFront) {
@@ -329,6 +330,7 @@ function renderUno() {
   unoTopCard.textContent = `${topFace.color} ${topFace.value}`;
   unoTopCard.style.background = COLORS[topFace.color] || '#111827';
   unoBotCount.textContent = `${unoState.bot.length} kartu`;
+  unoDrawPile.textContent = `${unoState.deck.length} kartu`;
   unoSideBadge.textContent = unoState.mode === 'flip' ? unoState.side.toUpperCase() : 'N/A';
   unoHand.innerHTML = '';
   unoState.player.forEach((card, i) => {
@@ -358,6 +360,8 @@ const PIECES = {
 let chessState;
 const chessBoardEl = document.getElementById('chessBoard');
 const chessStatus = document.getElementById('chessStatus');
+const chessCapturedWhite = document.getElementById('chessCapturedWhite');
+const chessCapturedBlack = document.getElementById('chessCapturedBlack');
 
 function initChess() {
   chessState = {
@@ -369,6 +373,8 @@ function initChess() {
     selected: null,
     ended: false,
     winner: null,
+    capturedByWhite: [],
+    capturedByBlack: [],
   };
   renderChess();
 }
@@ -418,6 +424,10 @@ function moveChessPiece(fr, fc, tr, tc) {
   const captured = chessState.board[tr][tc];
   chessState.board[tr][tc] = chessState.board[fr][fc];
   chessState.board[fr][fc] = '.';
+  if (captured !== '.') {
+    if (chessState.turn === 'white') chessState.capturedByWhite.push(captured);
+    else chessState.capturedByBlack.push(captured);
+  }
   if (captured !== '.' && ['k', 'q'].includes(captured.toLowerCase())) {
     chessState.ended = true;
     chessState.winner = chessState.turn;
@@ -468,6 +478,8 @@ function renderChess() {
     }
   }
   chessStatus.textContent = chessState.ended ? `Game tamat: ${chessState.winner} menang.` : `Giliran: ${chessState.turn}`;
+  chessCapturedWhite.textContent = chessState.capturedByWhite.map((p) => PIECES[p]).join(' ');
+  chessCapturedBlack.textContent = chessState.capturedByBlack.map((p) => PIECES[p]).join(' ');
 }
 
 document.getElementById('resetChess').addEventListener('click', () => {
@@ -487,7 +499,7 @@ const toPlayer = document.getElementById('toPlayer');
 const bankPlayer = document.getElementById('bankPlayer');
 
 function renderMonopolyBoard() {
-  const tiles = ['GO', 'Menteng', 'Dana Umum', 'Stasiun', 'Pajak', 'Bandung', 'Kesempatan', 'Jakarta', 'Parkir', 'Surabaya', 'Penjara', 'Mall', 'Airport', 'Hotel', 'Listrik', 'Jalan Bebas'];
+  const tiles = ['GO', 'Mediterania', 'Dana Umum', 'Baltic', 'Pajak', 'Reading RR', 'Oriental', 'Chance', 'Vermont', 'Jail', 'St.Charles', 'Electric', 'States', 'Virginia', 'Penn RR', 'Free Parking'];
   const board = document.getElementById('monopolyBoard');
   board.innerHTML = '';
   tiles.forEach((t) => {

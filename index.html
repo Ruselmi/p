@@ -48,19 +48,23 @@
         </div>
         <p id="unoStatus" class="status-pill"></p>
 
-        <div class="card-zone">
-          <article class="info-card">
-            <h3>Kartu Atas</h3>
-            <div id="unoTopCard" class="card">-</div>
-          </article>
-          <article class="info-card">
-            <h3>Tangan Bot</h3>
-            <div id="unoBotCount">0 kartu</div>
-          </article>
-          <article class="info-card">
-            <h3>Sisi Aktif Flip</h3>
-            <div id="unoSideBadge" class="status-pill">FRONT</div>
-          </article>
+        <div class="uno-table">
+          <div class="uno-seat">🤖 Bot <span id="unoBotCount">0 kartu</span></div>
+          <div class="uno-center">
+            <div class="pile-wrap">
+              <h3>Draw Pile</h3>
+              <div id="unoDrawPile" class="card back">UNO</div>
+            </div>
+            <div class="pile-wrap">
+              <h3>Discard</h3>
+              <div id="unoTopCard" class="card">-</div>
+            </div>
+            <div class="pile-wrap">
+              <h3>Sisi Flip</h3>
+              <div id="unoSideBadge" class="status-pill">FRONT</div>
+            </div>
+          </div>
+          <div class="uno-seat player">🧑 Kamu</div>
         </div>
 
         <h3>Tangan Kamu</h3>
@@ -82,7 +86,7 @@
           <button id="resetChess">Reset Catur</button>
           <span id="chessStatus" class="status-pill"></span>
         </div>
-        <div id="chessBoard" class="chess-board"></div>
+        <div class="chess-wrap"><div id="chessBoard" class="chess-board"></div><aside class="info-card"><h3>Bidak Tertangkap</h3><p>Putih menangkap:</p><div id="chessCapturedWhite" class="captured-row"></div><p>Hitam menangkap:</p><div id="chessCapturedBlack" class="captured-row"></div></aside></div>
 
         <details class="rules-box">
           <summary>Hukum / Cara Main Catur (Versi Game Ini)</summary>
@@ -96,7 +100,7 @@
 
       <section id="monopoly" class="tab">
         <h2>Monopoly Bank + Board HD</h2>
-        <div id="monopolyBoard" class="mono-board"></div>
+        <div id="monopolyBoard" class="mono-board"></div><p class="hint">Board visual dibuat ala game asli: tile properti, pajak, chance, jail, dan go.</p>
 
         <div class="panel-row card-panel">
           <input id="playerName" placeholder="Nama pemain" />
