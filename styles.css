@@ -1,0 +1,88 @@
+:root {
+  font-family: Inter, system-ui, Arial, sans-serif;
+  color: #1f2937;
+}
+body {
+  margin: 0;
+  padding: 0 1rem 2rem;
+  background: #f3f4f6;
+}
+header {
+  text-align: center;
+}
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.tab-btn {
+  border: 0;
+  background: #d1d5db;
+  padding: 0.6rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+.tab-btn.active { background: #2563eb; color: #fff; }
+.tab {
+  display: none;
+  background: #fff;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  max-width: 980px;
+  margin: 0 auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.tab.active { display: block; }
+.panel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+.card-zone {
+  display: flex;
+  gap: 2rem;
+}
+.card {
+  width: 84px;
+  height: 120px;
+  border-radius: 0.5rem;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+}
+.play-card {
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  color: #fff;
+  cursor: pointer;
+}
+.chess-board {
+  display: grid;
+  grid-template-columns: repeat(8, 56px);
+  width: max-content;
+  border: 3px solid #111827;
+}
+.square {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  cursor: pointer;
+}
+.light { background: #f8fafc; }
+.dark { background: #9ca3af; }
+.square.selected { outline: 3px solid #f59e0b; }
+ul { padding-left: 1.1rem; }
