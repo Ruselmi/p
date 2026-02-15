@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Hub: UNO, Catur, Monopoly Bank</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <h1>🎮 Game Hub</h1>
+      <p>Mainkan UNO, Catur, Monopoly Bank Edition, dan Hand Avatar AI dalam satu halaman.</p>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="uno">UNO</button>
+      <button class="tab-btn" data-tab="chess">Catur</button>
+      <button class="tab-btn" data-tab="monopoly">Monopoly Bank Edition</button>
+      <button class="tab-btn" data-tab="hand-ai">Hand Avatar AI</button>
+    </nav>
+
+    <main>
+      <section id="uno" class="tab active">
+        <h2>UNO Arena</h2>
+        <div class="panel-row card-panel">
+          <label for="unoMode">Mode UNO:</label>
+          <select id="unoMode">
+            <option value="classic">Classic</option>
+            <option value="flip">Flip</option>
+            <option value="mercy">Mercy</option>
+            <option value="fkk">FKK</option>
+          </select>
+          <button id="startUno">Mulai Ulang UNO</button>
+          <button id="unoDraw">Ambil Kartu</button>
+        </div>
+        <p id="unoStatus" class="status-pill"></p>
+
+        <div class="card-zone">
+          <article class="info-card">
+            <h3>Kartu Atas</h3>
+            <div id="unoTopCard" class="card">-</div>
+          </article>
+          <article class="info-card">
+            <h3>Tangan Bot</h3>
+            <div id="unoBotCount">0 kartu</div>
+          </article>
+        </div>
+
+        <h3>Tangan Kamu</h3>
+        <div id="unoHand" class="hand"></div>
+
+        <details class="rules-box">
+          <summary>Hukum / Cara Main UNO</summary>
+          <ul>
+            <li>Mainkan kartu sesuai warna atau angka/simbol kartu atas.</li>
+            <li>Mode Mercy: pemain yang mencapai 25 kartu dinyatakan kalah.</li>
+            <li>Mode FKK: saat tangan mencapai 15 kartu, otomatis kena tambah kartu.</li>
+          </ul>
+        </details>
+      </section>
+
+      <section id="chess" class="tab">
+        <h2>Catur Battle</h2>
+        <div class="panel-row card-panel">
+          <button id="resetChess">Reset Catur</button>
+          <span id="chessStatus" class="status-pill"></span>
+        </div>
+        <div id="chessBoard" class="chess-board"></div>
+
+        <details class="rules-box">
+          <summary>Hukum / Cara Main Catur (Versi Game Ini)</summary>
+          <ul>
+            <li>Langkah bidak dasar valid (pawn, knight, bishop, rook, queen, king).</li>
+            <li>Jika <b>Raja</b> atau <b>Ratu</b> tertangkap, game langsung tamat.</li>
+            <li>Belum menerapkan check/checkmate resmi FIDE.</li>
+          </ul>
+        </details>
+      </section>
+
+      <section id="monopoly" class="tab">
+        <h2>Monopoly Bank Edition</h2>
+        <div class="panel-row card-panel">
+          <input id="playerName" placeholder="Nama pemain" />
+          <input id="startBalance" type="number" placeholder="Saldo awal" value="1500" />
+          <button id="addPlayer">Tambah Pemain</button>
+        </div>
+        <div class="panel-row card-panel">
+          <select id="fromPlayer"></select>
+          <select id="toPlayer"></select>
+          <input id="transferAmount" type="number" placeholder="Jumlah transfer" />
+          <button id="transferBtn">Transfer</button>
+        </div>
+        <div class="panel-row card-panel">
+          <select id="bankPlayer"></select>
+          <input id="bankAmount" type="number" placeholder="+ untuk kredit, - untuk debit" />
+          <button id="bankTxnBtn">Transaksi Bank</button>
+        </div>
+
+        <h3>Daftar Saldo</h3>
+        <ul id="bankLedger"></ul>
+        <h3>Riwayat Transaksi</h3>
+        <ul id="bankHistory"></ul>
+
+        <details class="rules-box">
+          <summary>Hukum / Cara Main Monopoly Bank Edition</summary>
+          <ul>
+            <li>Banker bisa kredit/debit saldo pemain sesuai kejadian game board.</li>
+            <li>Transfer antar pemain hanya jika saldo pengirim cukup.</li>
+            <li>Saldo ≤ 0 dianggap bangkrut (dicatat di riwayat).</li>
+          </ul>
+        </details>
+      </section>
+
+      <section id="hand-ai" class="tab">
+        <h2>Hand Avatar AI</h2>
+        <div class="panel-row card-panel">
+          <button id="startHandTracking">Start Kamera & Hand Tracking</button>
+          <button id="stopHandTracking">Stop</button>
+          <span id="handStatus" class="status-pill">Status: idle</span>
+        </div>
+
+        <div class="hand-ai-layout">
+          <div class="info-card">
+            <h3>Kamera</h3>
+            <video id="handVideo" autoplay playsinline muted></video>
+            <canvas id="handOverlay"></canvas>
+          </div>
+
+          <div class="info-card">
+            <h3>Avatar Animate</h3>
+            <div id="avatarFace" class="avatar-face">
+              <div class="eyes">
+                <span class="eye"></span>
+                <span class="eye"></span>
+              </div>
+              <div id="avatarMouth" class="mouth neutral"></div>
+            </div>
+            <p id="gestureLabel">Gesture terdeteksi: -</p>
+          </div>
+        </div>
+
+        <h3>AI Learning Gesture</h3>
+        <div class="panel-row card-panel">
+          <input id="gestureName" placeholder="Nama gesture (contoh: rock)" />
+          <button id="saveGestureBtn">Simpan Gesture Saat Ini</button>
+          <button id="clearGestureBtn">Hapus Semua Data AI</button>
+        </div>
+        <ul id="gestureSamples"></ul>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

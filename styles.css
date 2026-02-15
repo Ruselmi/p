@@ -1,0 +1,192 @@
+:root {
+  font-family: Inter, system-ui, Arial, sans-serif;
+  color: #1f2937;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0 1rem 2rem;
+  background: radial-gradient(circle at top, #eef2ff 0%, #f3f4f6 45%, #e5e7eb 100%);
+}
+.hero {
+  text-align: center;
+  padding: 1.5rem 0 0.6rem;
+}
+.hero h1 { margin: 0; }
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+.tab-btn {
+  border: 0;
+  background: #d1d5db;
+  padding: 0.65rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.tab-btn.active { background: #2563eb; color: #fff; }
+.tab {
+  display: none;
+  background: #fff;
+  border-radius: 0.9rem;
+  padding: 1.2rem;
+  max-width: 1020px;
+  margin: 0 auto;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+}
+.tab.active { display: block; }
+h2 { margin-top: 0; }
+.panel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+.card-panel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.7rem;
+  padding: 0.7rem;
+}
+input, select, button {
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+}
+button {
+  border: 0;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+.status-pill {
+  display: inline-block;
+  background: #e0e7ff;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.9rem;
+}
+.card-zone {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+.info-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  padding: 0.8rem;
+}
+.card {
+  width: 84px;
+  height: 120px;
+  border-radius: 0.5rem;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 3rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  padding: 0.8rem;
+}
+.play-card {
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  color: #fff;
+  cursor: pointer;
+}
+.rules-box {
+  margin-top: 1rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 0.7rem;
+  padding: 0.6rem 0.8rem;
+}
+.chess-board {
+  display: grid;
+  grid-template-columns: repeat(8, 56px);
+  width: max-content;
+  border: 4px solid #111827;
+  border-radius: 0.4rem;
+  overflow: hidden;
+}
+.square {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  cursor: pointer;
+  border: 0;
+  border-radius: 0;
+}
+.light { background: #f8fafc; }
+.dark { background: #94a3b8; }
+.square.selected { outline: 3px solid #f59e0b; outline-offset: -3px; }
+ul { padding-left: 1.1rem; }
+
+.hand-ai-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+#handVideo,
+#handOverlay {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 0.6rem;
+  background: #111827;
+}
+
+#handOverlay {
+  margin-top: 0.4rem;
+}
+
+.avatar-face {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fde68a, #f59e0b);
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 -10px 30px rgba(0, 0, 0, 0.15);
+}
+
+.eyes {
+  display: flex;
+  gap: 2.5rem;
+  margin-top: 2rem;
+}
+
+.eye {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #111827;
+}
+
+.mouth {
+  width: 80px;
+  margin-top: 1.2rem;
+  border-bottom: 6px solid #111827;
+  transition: all 0.2s ease;
+}
+
+.mouth.neutral { height: 16px; border-radius: 0; }
+.mouth.smile { height: 34px; border-radius: 0 0 80px 80px; }
+.mouth.open { height: 42px; border-radius: 50%; background: #991b1b; border-bottom: 0; }
