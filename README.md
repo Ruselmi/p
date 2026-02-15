@@ -1,29 +1,40 @@
 # Game Hub HD
 
-Web app mini game dengan tampilan HD dan perbaikan bug:
+Web app mini game dengan tampilan HD dan update UNO lebih mendekati game asli.
 
-- **UNO HD**: Classic, Flip (1 kartu 2 data front/back), Mercy (+10/+8 card effect), FKK.
-- **Catur HD**: langkah dasar + game tamat saat raja/ratu tertangkap.
-- **Monopoly Bank + Board HD**: board visual, saldo pemain, transfer, transaksi bank, riwayat.
-- **Hand Avatar AI**: MediaPipe hand tracking + avatar animasi + AI learning gesture.
-- **PeerJS P2P**: opsi main online antar device/internet dengan kode room 4 karakter (maks 4 pemain: host + 3 client).
+## Fokus update terbaru (UNO)
 
-## Perbaikan bug utama
+Perbaikan utama:
+- Mode Mercy sekarang punya **reverse khusus** (reverse memberi efek skip + draw tambahan pada lawan).
+- Kartu action yang sebelumnya bermasalah sekarang aktif: `reverse`, `skip`, `+2`, `wild`, `wild+4`, `+10`, `+8`.
 
-- Room code sekarang tampil jelas di badge `Room: XXXX`.
-- Flow create/join room pakai konfigurasi PeerJS cloud (`0.peerjs.com:443`).
-- Sinkronisasi catur P2P diperbaiki agar kirim data langkah lengkap (from/to), bukan click mentah.
-- UNO mode Mercy diperbaiki dengan efek kartu +10/+8 ke lawan.
+### 15 fitur baru UNO
+1. Reverse khusus mode Mercy.
+2. Wild card pilih warna (player via color picker).
+3. Wild+4 aktif penuh.
+4. Stack draw card (`+2/+4/+8/+10`) dengan tipe sama.
+5. Pending draw indicator di status.
+6. Draw pile bisa diklik untuk draw.
+7. Shortcut keyboard `D` untuk draw.
+8. UNO button (`UNO!`).
+9. Penalti lupa tekan UNO (+2).
+10. Recycle deck otomatis dari discard saat deck habis.
+11. Bot difficulty selector (easy/normal/hard).
+12. Riwayat aksi UNO (maks 15 log).
+13. Highlight kartu legal playable.
+14. Timer giliran 20 detik + auto draw saat habis.
+15. Scoreboard + round counter.
 
-## Cara Jalan
+## Fitur lain
+- Catur HD: langkah dasar + game tamat saat raja/ratu tertangkap + panel bidak tertangkap.
+- Monopoly Board HD: board visual, saldo pemain, transfer, transaksi bank, riwayat.
+- Hand Avatar AI: MediaPipe hand tracking + avatar animasi + AI learning gesture.
+- PeerJS P2P: room 4 karakter, hingga 4 pemain total.
+
+## Menjalankan
 
 ```bash
 python3 -m http.server 8000
 ```
 
 Lalu buka `http://localhost:8000`.
-
-## Catatan
-
-- Fitur PeerJS dan MediaPipe memakai CDN internet.
-- Untuk mode online, pastikan semua device punya koneksi internet stabil.

@@ -192,3 +192,13 @@ ul { padding-left: 1.1rem; }
   border-radius: 0.6rem 0.6rem 0 0;
   background: linear-gradient(90deg,#ef4444,#f59e0b,#22c55e,#3b82f6);
 }
+
+
+.hidden { display: none !important; }
+.color-btn { min-width: 70px; }
+.color-btn[data-color="red"] { background: #dc2626; }
+.color-btn[data-color="blue"] { background: #2563eb; }
+.color-btn[data-color="green"] { background: #16a34a; }
+.color-btn[data-color="yellow"] { background: #d97706; }
+.play-card.playable { outline: 3px solid #facc15; transform: translateY(-2px); }
+#unoHistory { max-height: 170px; overflow: auto; background: #0b1221; border: 1px solid #1f2937; border-radius: 0.6rem; padding: 0.6rem 1rem; }

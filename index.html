@@ -43,10 +43,30 @@
             <option value="mercy">Mercy (+10 / +8)</option>
             <option value="fkk">FKK</option>
           </select>
+          <label for="unoDifficulty">Bot:</label>
+          <select id="unoDifficulty">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Hard</option>
+          </select>
           <button id="startUno">Mulai Ulang UNO</button>
           <button id="unoDraw">Ambil Kartu</button>
+          <button id="unoCall">UNO!</button>
         </div>
-        <p id="unoStatus" class="status-pill"></p>
+        <div class="panel-row">
+          <span id="unoStatus" class="status-pill"></span>
+          <span id="unoRound" class="status-pill">Round: 1</span>
+          <span id="unoScorePlayer" class="status-pill">Kamu: 0</span>
+          <span id="unoScoreBot" class="status-pill">Bot: 0</span>
+          <span id="unoTimer" class="status-pill">Timer: 20</span>
+        </div>
+        <div id="unoColorPicker" class="panel-row hidden">
+          <span>Pilih warna wild:</span>
+          <button class="color-btn" data-color="red">Red</button>
+          <button class="color-btn" data-color="blue">Blue</button>
+          <button class="color-btn" data-color="green">Green</button>
+          <button class="color-btn" data-color="yellow">Yellow</button>
+        </div>
 
         <div class="uno-table">
           <div class="uno-seat">🤖 Bot <span id="unoBotCount">0 kartu</span></div>
@@ -74,10 +94,12 @@
           <summary>Hukum / Cara Main UNO</summary>
           <ul>
             <li>Mode Flip: satu kartu punya 2 data (front/back). Jika kartu <b>flip</b> keluar, sisi permainan dibalik.</li>
-            <li>Mode Mercy: kartu aksi <b>+10</b> dan <b>+8</b> memberi tambahan kartu ke lawan saat dimainkan.</li>
+            <li>Mode Mercy: kartu aksi <b>+10</b>, <b>+8</b>, dan <b>reverse khusus</b> aktif (reverse = skip + penalti tambahan).</li>
             <li>Kartu dimainkan jika warna/angka cocok dengan kartu atas pada sisi aktif.</li>
           </ul>
         </details>
+        <h3>Riwayat UNO</h3>
+        <ul id="unoHistory"></ul>
       </section>
 
       <section id="chess" class="tab">
