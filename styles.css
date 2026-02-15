@@ -202,3 +202,50 @@ ul { padding-left: 1.1rem; }
 .color-btn[data-color="yellow"] { background: #d97706; }
 .play-card.playable { outline: 3px solid #facc15; transform: translateY(-2px); }
 #unoHistory { max-height: 170px; overflow: auto; background: #0b1221; border: 1px solid #1f2937; border-radius: 0.6rem; padding: 0.6rem 1rem; }
+
+
+.hand-fx-stage {
+  position: relative;
+  height: 140px;
+  border: 1px dashed #334155;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: radial-gradient(circle at center, #020617, #0b1221);
+}
+.fx-blackhole, .fx-whitehole {
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  left: calc(50% - 55px);
+  top: calc(50% - 55px);
+  animation: spinHole 1.6s linear infinite;
+}
+.fx-blackhole {
+  background: radial-gradient(circle, #020617 30%, #000 75%, #111827 100%);
+  box-shadow: 0 0 20px #0ea5e9;
+}
+.fx-whitehole {
+  background: radial-gradient(circle, #fff 20%, #dbeafe 55%, #93c5fd 100%);
+  box-shadow: 0 0 24px #fff;
+}
+.fx-sticker {
+  position: absolute;
+  font-size: 1.3rem;
+  animation: flySticker 1.6s ease-out forwards;
+}
+@keyframes spinHole {
+  from { transform: rotate(0deg) scale(0.9); }
+  to { transform: rotate(360deg) scale(1.08); }
+}
+@keyframes flySticker {
+  from { transform: translateY(90px) scale(0.8); opacity: 0; }
+  20% { opacity: 1; }
+  to { transform: translateY(-20px) scale(1.15); opacity: 0; }
+}
+.avatar-face.pulse { animation: pulseAvatar 0.6s ease-in-out 2; }
+@keyframes pulseAvatar {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}

@@ -755,15 +755,19 @@ const handVideo = document.getElementById('handVideo');
 const handOverlay = document.getElementById('handOverlay');
 const handStatus = document.getElementById('handStatus');
 const gestureLabel = document.getElementById('gestureLabel');
+const fingerCountLabel = document.getElementById('fingerCountLabel');
+const handFxStage = document.getElementById('handFxStage');
 const gestureNameInput = document.getElementById('gestureName');
 const gestureSamplesList = document.getElementById('gestureSamples');
 const avatarMouth = document.getElementById('avatarMouth');
+const avatarFace = document.getElementById('avatarFace');
 
 const handCtx = handOverlay.getContext('2d');
 let mpHands;
 let cameraStream;
 let trackingActive = false;
 let latestFeature = null;
+let fxCooldown = 0;
 
 const AI_STORAGE_KEY = 'gesture-ai-learning-v1';
 let gestureDataset = JSON.parse(localStorage.getItem(AI_STORAGE_KEY) || '{}');
@@ -802,25 +806,101 @@ function animateAvatarByGesture(gesture) {
   else if (gesture.includes('smile') || gesture.includes('ok') || gesture.includes('love')) avatarMouth.className = 'mouth smile';
 }
 
-function drawResults(landmarks) {
+function isFingerOpen(landmarks, tip, pip) {
+  return landmarks[tip].y < landmarks[pip].y;
+}
+
+function countOpenFingers(landmarks) {
+  if (!landmarks) return 0;
+  let count = 0;
+  if (Math.abs(landmarks[4].x - landmarks[3].x) > 0.025) count += 1; // thumb approx
+  if (isFingerOpen(landmarks, 8, 6)) count += 1;
+  if (isFingerOpen(landmarks, 12, 10)) count += 1;
+  if (isFingerOpen(landmarks, 16, 14)) count += 1;
+  if (isFingerOpen(landmarks, 20, 18)) count += 1;
+  return count;
+}
+
+function clearFx() {
+  handFxStage.innerHTML = '';
+}
+
+function spawnSticker(count) {
+  const emojis = ['✨', '🔥', '🌀', '⭐', '🎯', '🎈'];
+  for (let i = 0; i < Math.min(7, count + 1); i++) {
+    const el = document.createElement('span');
+    el.className = 'fx-sticker';
+    el.textContent = emojis[(i + count) % emojis.length];
+    el.style.left = `${10 + Math.random() * 80}%`;
+    el.style.bottom = `${Math.random() * 30}px`;
+    handFxStage.appendChild(el);
+  }
+}
+
+function applyHandFxByCount(count) {
+  if (fxCooldown > 0) {
+    fxCooldown -= 1;
+    return;
+  }
+
+  clearFx();
+  avatarFace.classList.remove('pulse');
+
+  if (count === 2) {
+    spawnSticker(2);
+    fxCooldown = 10;
+  } else if (count === 3) {
+    const h = document.createElement('div');
+    h.className = 'fx-blackhole';
+    handFxStage.appendChild(h);
+    fxCooldown = 12;
+  } else if (count === 4) {
+    const h = document.createElement('div');
+    h.className = 'fx-whitehole';
+    handFxStage.appendChild(h);
+    fxCooldown = 12;
+  } else if (count === 5) {
+    avatarFace.classList.add('pulse');
+    spawnSticker(5);
+    fxCooldown = 8;
+  } else if (count >= 6) {
+    const b = document.createElement('div');
+    b.className = 'fx-blackhole';
+    const w = document.createElement('div');
+    w.className = 'fx-whitehole';
+    w.style.transform = 'scale(0.6)';
+    handFxStage.appendChild(b);
+    handFxStage.appendChild(w);
+    spawnSticker(count);
+    avatarFace.classList.add('pulse');
+    fxCooldown = 12;
+  }
+}
+
+function drawResults(landmarksList) {
   handOverlay.width = handVideo.videoWidth || 640;
   handOverlay.height = handVideo.videoHeight || 480;
   handCtx.clearRect(0, 0, handOverlay.width, handOverlay.height);
   handCtx.drawImage(handVideo, 0, 0, handOverlay.width, handOverlay.height);
 
-  if (!landmarks?.length) {
+  if (!landmarksList?.length) {
     latestFeature = null;
     gestureLabel.textContent = 'Gesture terdeteksi: unknown';
+    fingerCountLabel.textContent = 'Jumlah jari: 0';
     animateAvatarByGesture('unknown');
     return;
   }
-  const hand = landmarks[0];
+
+  const hand = landmarksList[0];
   window.drawConnectors(handCtx, hand, window.HAND_CONNECTIONS, { color: '#22c55e', lineWidth: 3 });
   window.drawLandmarks(handCtx, hand, { color: '#ef4444', lineWidth: 2 });
   latestFeature = featureFromLandmarks(hand);
   const label = classifyGesture(latestFeature);
+  const fingerCount = countOpenFingers(hand);
   gestureLabel.textContent = `Gesture terdeteksi: ${label}`;
+  fingerCountLabel.textContent = `Jumlah jari: ${fingerCount}`;
   animateAvatarByGesture(label);
+  applyHandFxByCount(fingerCount);
 }
 
 async function startHandTracking() {
@@ -835,7 +915,7 @@ async function startHandTracking() {
     handVideo.srcObject = cameraStream;
     await handVideo.play();
     mpHands = new window.Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
-    mpHands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
+    mpHands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
     mpHands.onResults((res) => drawResults(res.multiHandLandmarks));
     trackingActive = true;
     handStatus.textContent = 'Status: hand tracking aktif';
@@ -855,6 +935,7 @@ function stopHandTracking() {
   trackingActive = false;
   cameraStream?.getTracks().forEach((t) => t.stop());
   cameraStream = null;
+  clearFx();
   handStatus.textContent = 'Status: idle';
 }
 

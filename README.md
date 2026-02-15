@@ -38,3 +38,12 @@ python3 -m http.server 8000
 ```
 
 Lalu buka `http://localhost:8000`.
+
+
+## Update Hand AI (efek gesture jari)
+- Deteksi jumlah jari realtime ditampilkan di UI.
+- Gesture jari 2: stiker terbang.
+- Gesture jari 3: efek blackhole animasi.
+- Gesture jari 4: efek whitehole animasi.
+- Gesture jari 5: avatar pulse + stiker.
+- Gesture jari 6 ke atas: combo blackhole + whitehole + stiker.
