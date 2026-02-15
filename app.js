@@ -33,6 +33,7 @@ const createRoomBtn = document.getElementById('createRoomBtn');
 const joinRoomBtn = document.getElementById('joinRoomBtn');
 const leaveRoomBtn = document.getElementById('leaveRoomBtn');
 const joinCodeInput = document.getElementById('joinCodeInput');
+const roomCodeBadge = document.getElementById('roomCodeBadge');
 
 const p2p = {
   peer: null,
@@ -46,8 +47,17 @@ function randomRoomCode() {
   return Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
+function makePeer(id) {
+  const cfg = { host: '0.peerjs.com', port: 443, secure: true, path: '/' };
+  return id ? new window.Peer(id, cfg) : new window.Peer(cfg);
+}
+
 function updateP2PStatus(text) {
   p2pStatus.textContent = text;
+}
+
+function updateRoomBadge(code = '-') {
+  roomCodeBadge.textContent = `Room: ${code}`;
 }
 
 function cleanupP2P() {
@@ -60,6 +70,7 @@ function cleanupP2P() {
   p2p.guestConns = [];
   p2p.roomCode = null;
   updateP2PStatus('Offline');
+  updateRoomBadge('-');
 }
 
 function emitP2P(action, payload) {
@@ -83,15 +94,15 @@ function handleP2PMessage(msg, sourceConn = null) {
     } else if (msg.action === 'uno:draw') {
       handleUnoDraw(true);
     } else if (msg.action === 'chess:move') {
-      handleSquareClick(msg.payload.r, msg.payload.c, true);
+      applyRemoteChessMove(msg.payload.fr, msg.payload.fc, msg.payload.tr, msg.payload.tc);
     } else if (msg.action === 'chess:reset') {
       initChess();
     } else if (msg.action === 'mono:addPlayer') {
-      addMonopolyPlayer(msg.payload.name, msg.payload.balance);
+      addMonopolyPlayer(msg.payload.name, msg.payload.balance, true);
     } else if (msg.action === 'mono:transfer') {
-      monopolyTransfer(msg.payload.from, msg.payload.to, msg.payload.amount);
+      monopolyTransfer(msg.payload.from, msg.payload.to, msg.payload.amount, true);
     } else if (msg.action === 'mono:bankTxn') {
-      monopolyBankTxn(msg.payload.idx, msg.payload.amount);
+      monopolyBankTxn(msg.payload.idx, msg.payload.amount, true);
     }
   });
 
@@ -110,13 +121,14 @@ createRoomBtn.addEventListener('click', () => {
   cleanupP2P();
   const roomCode = randomRoomCode();
   const hostId = `gamehub-${roomCode}`;
-  const peer = new window.Peer(hostId);
+  const peer = makePeer(hostId);
   p2p.peer = peer;
   p2p.isHost = true;
   p2p.roomCode = roomCode;
   updateP2PStatus(`Membuat room ${roomCode}...`);
+  updateRoomBadge(roomCode);
 
-  peer.on('open', () => updateP2PStatus(`Host online. Kode room: ${roomCode}`));
+  peer.on('open', () => { updateP2PStatus(`Host online. Kode room: ${roomCode}`); updateRoomBadge(roomCode); });
   peer.on('connection', (conn) => {
     if (p2p.guestConns.length >= 3) {
       conn.on('open', () => conn.send({ action: 'system', payload: 'Room penuh (max 4).' }));
@@ -131,7 +143,7 @@ createRoomBtn.addEventListener('click', () => {
     });
     updateP2PStatus(`Host room ${roomCode} online | client: ${p2p.guestConns.length}`);
   });
-  peer.on('error', (e) => updateP2PStatus(`Error host: ${e.type}`));
+  peer.on('error', (e) => updateP2PStatus(`Error host: ${e.type} (cek internet/CDN)`));
 });
 
 joinRoomBtn.addEventListener('click', () => {
@@ -145,9 +157,10 @@ joinRoomBtn.addEventListener('click', () => {
     updateP2PStatus('Kode room harus 4 karakter.');
     return;
   }
-  const peer = new window.Peer();
+  const peer = makePeer();
   p2p.peer = peer;
   p2p.roomCode = code;
+  updateRoomBadge(code);
   peer.on('open', () => {
     const conn = peer.connect(`gamehub-${code}`);
     p2p.hostConn = conn;
@@ -161,10 +174,11 @@ joinRoomBtn.addEventListener('click', () => {
     });
     conn.on('close', () => updateP2PStatus('Koneksi host terputus'));
   });
-  peer.on('error', (e) => updateP2PStatus(`Error join: ${e.type}`));
+  peer.on('error', (e) => updateP2PStatus(`Error join: ${e.type} (kode room / internet)`));
 });
 
 leaveRoomBtn.addEventListener('click', cleanupP2P);
+updateRoomBadge('-');
 
 // --- UNO HD ---
 const unoMode = document.getElementById('unoMode');
@@ -196,6 +210,8 @@ function buildUnoDeck(mode) {
     }
     if (mode === 'flip') {
       deck.push(makeFlipDual('skip', c), makeFlipDual('+2', c), makeFlipDual('flip', c));
+    } else if (mode === 'mercy') {
+      deck.push({ color: c, value: 'skip' }, { color: c, value: '+2' }, { color: c, value: '+10' }, { color: c, value: '+8' });
     } else {
       deck.push({ color: c, value: 'skip' }, { color: c, value: '+2' });
     }
@@ -227,11 +243,10 @@ function drawMultiple(player, count) {
   for (let i = 0; i < count; i++) drawCard(player);
 }
 
-function applySpecialRules(targetHand, owner) {
+function applySpecialRules(targetHand) {
   const mode = unoState.mode;
-  if (mode === 'mercy' && targetHand.length >= 30) return true;
+  if (mode === 'mercy' && targetHand.length >= 35) return true;
   if (mode === 'fkk' && targetHand.length >= 15) drawMultiple(targetHand, 2);
-  if (mode === 'mercy' && owner === 'bot' && Math.random() < 0.2) drawMultiple(targetHand, 8);
   return false;
 }
 
@@ -247,6 +262,12 @@ function startUno(forcedMode = null) {
   emitP2P('uno:start', { mode });
 }
 
+function applyMercyAction(cardFace, targetHand) {
+  if (unoState.mode !== 'mercy') return;
+  if (cardFace.value === '+10') drawMultiple(targetHand, 10);
+  if (cardFace.value === '+8') drawMultiple(targetHand, 8);
+}
+
 function botTurn() {
   if (unoState.ended) return;
   const idx = unoState.bot.findIndex((c) => canPlay(c, unoState.top));
@@ -256,12 +277,14 @@ function botTurn() {
   } else {
     const played = unoState.bot.splice(idx, 1)[0];
     unoState.top = played;
-    if (unoState.mode === 'flip' && getCardFace(played).value === 'flip') {
+    const face = getCardFace(played);
+    if (unoState.mode === 'flip' && face.value === 'flip') {
       unoState.side = unoState.side === 'front' ? 'back' : 'front';
     }
+    applyMercyAction(face, unoState.player);
   }
 
-  if (applySpecialRules(unoState.bot, 'bot')) {
+  if (applySpecialRules(unoState.bot)) {
     unoState.ended = true;
     unoStatus.textContent = 'Mercy: bot kena over-limit kartu. Kamu menang!';
   } else if (!unoState.bot.length) {
@@ -276,9 +299,11 @@ function playerPlay(index, fromRemote = false) {
   if (!card || !canPlay(card, unoState.top)) return;
   const played = unoState.player.splice(index, 1)[0];
   unoState.top = played;
-  if (unoState.mode === 'flip' && getCardFace(played).value === 'flip') {
+  const face = getCardFace(played);
+  if (unoState.mode === 'flip' && face.value === 'flip') {
     unoState.side = unoState.side === 'front' ? 'back' : 'front';
   }
+  applyMercyAction(face, unoState.bot);
 
   if (!unoState.player.length) {
     unoState.ended = true;
@@ -311,7 +336,8 @@ function renderUno() {
     const btn = document.createElement('button');
     btn.className = 'play-card';
     btn.style.background = COLORS[f.color] || '#111827';
-    btn.textContent = `${f.color} ${f.value}`;
+    if (unoState.mode === 'flip') btn.textContent = `${card.front.value}/${card.back.value} (${f.color})`;
+    else btn.textContent = `${f.color} ${f.value}`;
     btn.onclick = () => playerPlay(i);
     unoHand.appendChild(btn);
   });
@@ -387,7 +413,28 @@ function validMove(fr, fc, tr, tc) {
   return false;
 }
 
-function handleSquareClick(r, c, fromRemote = false) {
+function moveChessPiece(fr, fc, tr, tc) {
+  if (!validMove(fr, fc, tr, tc)) return false;
+  const captured = chessState.board[tr][tc];
+  chessState.board[tr][tc] = chessState.board[fr][fc];
+  chessState.board[fr][fc] = '.';
+  if (captured !== '.' && ['k', 'q'].includes(captured.toLowerCase())) {
+    chessState.ended = true;
+    chessState.winner = chessState.turn;
+  } else {
+    chessState.turn = chessState.turn === 'white' ? 'black' : 'white';
+  }
+  return true;
+}
+
+function applyRemoteChessMove(fr, fc, tr, tc) {
+  if (chessState.ended) return;
+  moveChessPiece(fr, fc, tr, tc);
+  chessState.selected = null;
+  renderChess();
+}
+
+function handleSquareClick(r, c) {
   if (chessState.ended) return;
   const sel = chessState.selected;
   const currentPiece = chessState.board[r][c];
@@ -397,25 +444,14 @@ function handleSquareClick(r, c, fromRemote = false) {
     if ((chessState.turn === 'white' && !isWhite(currentPiece)) || (chessState.turn === 'black' && isWhite(currentPiece))) return;
     chessState.selected = [r, c];
     renderChess();
-    if (!fromRemote) emitP2P('chess:move', { r, c });
     return;
   }
 
   const [fr, fc] = sel;
-  if (validMove(fr, fc, r, c)) {
-    const captured = chessState.board[r][c];
-    chessState.board[r][c] = chessState.board[fr][fc];
-    chessState.board[fr][fc] = '.';
-    if (captured !== '.' && ['k', 'q'].includes(captured.toLowerCase())) {
-      chessState.ended = true;
-      chessState.winner = chessState.turn;
-    } else {
-      chessState.turn = chessState.turn === 'white' ? 'black' : 'white';
-    }
-  }
+  const moved = moveChessPiece(fr, fc, r, c);
   chessState.selected = null;
   renderChess();
-  if (!fromRemote) emitP2P('chess:move', { r, c });
+  if (moved) emitP2P('chess:move', { fr, fc, tr: r, tc: c });
 }
 
 function renderChess() {

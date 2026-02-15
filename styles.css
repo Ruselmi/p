@@ -149,3 +149,8 @@ ul { padding-left: 1.1rem; }
 .mouth.neutral { height: 16px; border-radius: 0; }
 .mouth.smile { height: 34px; border-radius: 0 0 80px 80px; }
 .mouth.open { height: 42px; border-radius: 50%; background: #991b1b; border-bottom: 0; }
+
+
+#roomCodeBadge { background: #14532d; color: #dcfce7; }
+.play-card { box-shadow: 0 6px 12px #0005; font-weight: 700; }
+.card { border: 2px solid #ffffff44; }
