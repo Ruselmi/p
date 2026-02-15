@@ -190,6 +190,11 @@ const unoSideBadge = document.getElementById('unoSideBadge');
 const unoDrawPile = document.getElementById('unoDrawPile');
 let unoState;
 
+function randomUnoColor() {
+  const cs = ['red', 'blue', 'green', 'yellow'];
+  return cs[Math.floor(Math.random() * cs.length)];
+}
+
 function makeFlipDual(valueFront, colorFront) {
   const darkColors = ['pink', 'teal', 'orange', 'purple'];
   const backColor = darkColors[Math.floor(Math.random() * darkColors.length)];
@@ -212,14 +217,24 @@ function buildUnoDeck(mode) {
     if (mode === 'flip') {
       deck.push(makeFlipDual('skip', c), makeFlipDual('+2', c), makeFlipDual('flip', c));
     } else if (mode === 'mercy') {
-      deck.push({ color: c, value: 'skip' }, { color: c, value: '+2' }, { color: c, value: '+10' }, { color: c, value: '+8' });
+      deck.push(
+        { color: c, value: 'skip' },
+        { color: c, value: 'reverse' },
+        { color: c, value: '+2' },
+        { color: c, value: '+10' },
+        { color: c, value: '+8' },
+      );
     } else {
-      deck.push({ color: c, value: 'skip' }, { color: c, value: '+2' });
+      deck.push({ color: c, value: 'skip' }, { color: c, value: 'reverse' }, { color: c, value: '+2' });
     }
   }
+
   for (let i = 0; i < 4; i++) {
     if (mode === 'flip') deck.push(makeFlipDual('wild', 'wild'));
-    else deck.push({ color: 'wild', value: 'wild' });
+    else {
+      deck.push({ color: 'wild', value: 'wild' });
+      deck.push({ color: 'wild', value: 'wild+4' });
+    }
   }
   return deck.sort(() => Math.random() - 0.5);
 }
@@ -229,10 +244,15 @@ function getCardFace(card) {
   return card;
 }
 
+function currentTopColor() {
+  return unoState.chosenColor || getCardFace(unoState.top).color;
+}
+
 function canPlay(card, top) {
   const c = getCardFace(card);
-  const t = getCardFace(top);
-  return c.color === 'wild' || c.color === t.color || c.value === t.value;
+  const topFace = getCardFace(top);
+  const topColor = currentTopColor();
+  return c.color === 'wild' || c.color === topColor || c.value === topFace.value;
 }
 
 function drawCard(player) {
@@ -251,38 +271,86 @@ function applySpecialRules(targetHand) {
   return false;
 }
 
+function chooseColorByActor(actor) {
+  if (actor === 'bot') return randomUnoColor();
+  const input = window.prompt('Pilih warna: red / blue / green / yellow', 'red');
+  if (!input) return randomUnoColor();
+  const picked = input.trim().toLowerCase();
+  return ['red', 'blue', 'green', 'yellow'].includes(picked) ? picked : randomUnoColor();
+}
+
+function resolveUnoCardEffect(face, actor) {
+  let skipOpponent = false;
+  let drawCount = 0;
+
+  if (face.value === 'skip' || face.value === 'reverse') skipOpponent = true;
+  if (face.value === '+2') drawCount = 2;
+  if (face.value === 'wild+4') drawCount = 4;
+  if (face.value === '+10') drawCount = 10;
+  if (face.value === '+8') drawCount = 8;
+
+  if (drawCount > 0) {
+    if (actor === 'player') drawMultiple(unoState.bot, drawCount);
+    else drawMultiple(unoState.player, drawCount);
+    skipOpponent = true;
+  }
+
+  if (face.color === 'wild') {
+    unoState.chosenColor = chooseColorByActor(actor);
+  } else {
+    unoState.chosenColor = null;
+  }
+
+  return { skipOpponent };
+}
+
 function startUno(forcedMode = null) {
   const mode = forcedMode || unoMode.value;
   unoMode.value = mode;
   const deck = buildUnoDeck(mode);
   const startCards = mode === 'classic' ? 7 : mode === 'flip' ? 7 : 10;
-  unoState = { mode, deck, player: [], bot: [], top: null, ended: false, side: 'front' };
+  unoState = {
+    mode,
+    deck,
+    player: [],
+    bot: [],
+    top: null,
+    ended: false,
+    side: 'front',
+    chosenColor: null,
+  };
   for (let i = 0; i < startCards; i++) { drawCard(unoState.player); drawCard(unoState.bot); }
   unoState.top = unoState.deck.pop();
+  const firstFace = getCardFace(unoState.top);
+  if (firstFace.color === 'wild') unoState.chosenColor = randomUnoColor();
   renderUno();
   emitP2P('uno:start', { mode });
 }
 
-function applyMercyAction(cardFace, targetHand) {
-  if (unoState.mode !== 'mercy') return;
-  if (cardFace.value === '+10') drawMultiple(targetHand, 10);
-  if (cardFace.value === '+8') drawMultiple(targetHand, 8);
-}
-
-function botTurn() {
-  if (unoState.ended) return;
+function botTurn(chain = 0) {
+  if (unoState.ended || chain > 3) return;
   const idx = unoState.bot.findIndex((c) => canPlay(c, unoState.top));
+
   if (idx === -1) {
-    if (unoState.mode === 'mercy') drawMultiple(unoState.bot, 8);
-    else drawCard(unoState.bot);
+    drawCard(unoState.bot);
   } else {
     const played = unoState.bot.splice(idx, 1)[0];
     unoState.top = played;
     const face = getCardFace(played);
+
     if (unoState.mode === 'flip' && face.value === 'flip') {
       unoState.side = unoState.side === 'front' ? 'back' : 'front';
     }
-    applyMercyAction(face, unoState.player);
+
+    const effect = resolveUnoCardEffect(face, 'bot');
+    if (effect.skipOpponent) {
+      if (applySpecialRules(unoState.player)) {
+        unoState.ended = true;
+        unoStatus.textContent = 'Mercy: Kamu over-limit kartu. Bot menang!';
+        return;
+      }
+      return botTurn(chain + 1);
+    }
   }
 
   if (applySpecialRules(unoState.bot)) {
@@ -298,28 +366,36 @@ function playerPlay(index, fromRemote = false) {
   if (unoState.ended) return;
   const card = unoState.player[index];
   if (!card || !canPlay(card, unoState.top)) return;
+
   const played = unoState.player.splice(index, 1)[0];
   unoState.top = played;
   const face = getCardFace(played);
+
   if (unoState.mode === 'flip' && face.value === 'flip') {
     unoState.side = unoState.side === 'front' ? 'back' : 'front';
   }
-  applyMercyAction(face, unoState.bot);
+
+  const effect = resolveUnoCardEffect(face, 'player');
 
   if (!unoState.player.length) {
     unoState.ended = true;
     unoStatus.textContent = 'Kamu menang!';
-  } else {
+  } else if (!effect.skipOpponent) {
     botTurn();
   }
+
+  if (applySpecialRules(unoState.bot)) {
+    unoState.ended = true;
+    unoStatus.textContent = 'Mercy: bot kena over-limit kartu. Kamu menang!';
+  }
+
   renderUno();
   if (!fromRemote) emitP2P('uno:play', { index });
 }
 
 function handleUnoDraw(fromRemote = false) {
   if (unoState.ended) return;
-  if (unoState.mode === 'mercy') drawMultiple(unoState.player, 10);
-  else drawCard(unoState.player);
+  drawCard(unoState.player);
   botTurn();
   renderUno();
   if (!fromRemote) emitP2P('uno:draw', {});
@@ -327,12 +403,14 @@ function handleUnoDraw(fromRemote = false) {
 
 function renderUno() {
   const topFace = getCardFace(unoState.top);
-  unoTopCard.textContent = `${topFace.color} ${topFace.value}`;
-  unoTopCard.style.background = COLORS[topFace.color] || '#111827';
+  const shownColor = currentTopColor();
+  unoTopCard.textContent = `${shownColor} ${topFace.value}`;
+  unoTopCard.style.background = COLORS[shownColor] || '#111827';
   unoBotCount.textContent = `${unoState.bot.length} kartu`;
   unoDrawPile.textContent = `${unoState.deck.length} kartu`;
-  unoSideBadge.textContent = unoState.mode === 'flip' ? unoState.side.toUpperCase() : 'N/A';
+  unoSideBadge.textContent = unoState.mode === 'flip' ? unoState.side.toUpperCase() : (unoState.chosenColor || 'N/A').toUpperCase();
   unoHand.innerHTML = '';
+
   unoState.player.forEach((card, i) => {
     const f = getCardFace(card);
     const btn = document.createElement('button');
@@ -343,6 +421,7 @@ function renderUno() {
     btn.onclick = () => playerPlay(i);
     unoHand.appendChild(btn);
   });
+
   if (!unoState.ended) {
     unoStatus.textContent = `Mode ${unoState.mode.toUpperCase()} | Giliran kamu`;
   }
