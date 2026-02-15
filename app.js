@@ -823,6 +823,10 @@ const gestureNameInput = document.getElementById('gestureName');
 const gestureSamplesList = document.getElementById('gestureSamples');
 const avatarMouth = document.getElementById('avatarMouth');
 const avatarFace = document.getElementById('avatarFace');
+const handVariantGrid = document.getElementById('handVariantGrid');
+const playAllHandVariantsBtn = document.getElementById('playAllHandVariants');
+const handVariantStatus = document.getElementById('handVariantStatus');
+const handVariantResult = document.getElementById('handVariantResult');
 
 const handCtx = handOverlay.getContext('2d');
 let mpHands;
@@ -834,9 +838,20 @@ let horrorEnabled = true;
 let threeScene; let threeCamera; let threeRenderer; let threeMesh; let threeParticles = [];
 let transformerLoaded = false;
 let transformerEngine = null;
+let previewTimer = null;
 
-
-
+const HAND_VARIANTS = [
+  { count: 1, title: 'Focus Pulse', result: 'Avatar pulse + burst hijau.' },
+  { count: 2, title: 'Sticker Rain', result: 'Stiker partikel terbang + burst amber.' },
+  { count: 3, title: 'Blackhole', result: 'Blackhole aktif + fog + burst cyan.' },
+  { count: 4, title: 'Whitehole', result: 'Whitehole terang + aura avatar.' },
+  { count: 5, title: 'Power Cheer', result: 'Pulse cepat + sticker lebih banyak.' },
+  { count: 6, title: 'Combo Nova', result: 'Combo hole + sticker + burst ungu.' },
+  { count: 7, title: 'Fog Spin', result: 'Fog horor + partikel emerald.' },
+  { count: 8, title: 'Ghost Glow', result: 'Avatar horor + white glow burst.' },
+  { count: 9, title: 'Hyper Party', result: 'Pulse + sticker padat + pink burst.' },
+  { count: 10, title: 'Ultimate Rift', result: 'Fog + horror + sticker ekstra + burst putih.' },
+];
 
 function initThreeFx() {
   if (!window.THREE || threeRenderer) return;
@@ -895,6 +910,48 @@ function runTenAnimations(count) {
   if (count === 8) { avatarFace.classList.add('horror'); burstThree(0x60a5fa); }
   if (count === 9) { avatarFace.classList.add('pulse'); spawnSticker(7); burstThree(0xfb7185); }
   if (count >= 10) { handFxStage.classList.add('horror-fog'); avatarFace.classList.add('horror'); spawnSticker(8); burstThree(0xf8fafc); }
+}
+
+
+function runHandVariantPreview(count, source = 'preview') {
+  const variant = HAND_VARIANTS.find((v) => v.count === count);
+  if (!variant) return;
+  applyHandFxByCount(count, true);
+  handVariantStatus.textContent = `Preview: ${source} varian ${count} - ${variant.title}`;
+  handVariantResult.textContent = `Hasil: ${variant.result}`;
+}
+
+function renderHandVariantButtons() {
+  if (!handVariantGrid) return;
+  handVariantGrid.innerHTML = HAND_VARIANTS.map((variant) => (
+    `<button class="hand-variant-btn" data-variant-count="${variant.count}" title="${variant.result}">`
+      + `<strong>Varian ${variant.count}</strong><span>${variant.title}</span></button>`
+  )).join('');
+
+  handVariantGrid.querySelectorAll('[data-variant-count]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const count = Number(btn.dataset.variantCount || '0');
+      runHandVariantPreview(count, 'manual');
+    });
+  });
+}
+
+function playAllHandVariants() {
+  if (previewTimer) clearInterval(previewTimer);
+  let idx = 0;
+  handVariantStatus.textContent = 'Preview: menjalankan semua varian...';
+  runHandVariantPreview(HAND_VARIANTS[0].count, 'auto');
+  idx = 1;
+  previewTimer = setInterval(() => {
+    if (idx >= HAND_VARIANTS.length) {
+      clearInterval(previewTimer);
+      previewTimer = null;
+      handVariantStatus.textContent = 'Preview: selesai (10 varian)';
+      return;
+    }
+    runHandVariantPreview(HAND_VARIANTS[idx].count, 'auto');
+    idx += 1;
+  }, 900);
 }
 
 function fallbackSentiment(text) {
@@ -1036,8 +1093,8 @@ function spawnSticker(count) {
   }
 }
 
-function applyHandFxByCount(count) {
-  if (fxCooldown > 0) {
+function applyHandFxByCount(count, force = false) {
+  if (!force && fxCooldown > 0) {
     fxCooldown -= 1;
     return;
   }
@@ -1123,6 +1180,11 @@ function drawResults(landmarksList) {
   const fingerCount = countOpenFingers(hand);
   gestureLabel.textContent = `Gesture terdeteksi: ${label}`;
   fingerCountLabel.textContent = `Jumlah jari: ${fingerCount}`;
+  const liveVariant = HAND_VARIANTS.find((v) => v.count === Math.min(10, Math.max(1, fingerCount)));
+  if (liveVariant) {
+    handVariantStatus.textContent = `Preview: live varian ${liveVariant.count} - ${liveVariant.title}`;
+    handVariantResult.textContent = `Hasil: ${liveVariant.result}`;
+  }
   animateAvatarByGesture(label);
   applyHandFxByCount(fingerCount);
   if (!horrorEnabled) {
@@ -1174,6 +1236,7 @@ document.getElementById('stopHandTracking').addEventListener('click', stopHandTr
 handViewMode.addEventListener('change', applyHandViewMode);
 horrorModeToggle.addEventListener('change', () => { horrorEnabled = horrorModeToggle.checked; if (!horrorEnabled) { handFxStage.classList.remove('horror-fog'); avatarFace.classList.remove('horror'); } });
 aiEngineMode.addEventListener('change', () => { initTransformerLite(); });
+playAllHandVariantsBtn?.addEventListener('click', playAllHandVariants);
 document.getElementById('saveGestureBtn').addEventListener('click', () => {
   const label = gestureNameInput.value.trim().toLowerCase();
   if (!label || !latestFeature) {
@@ -1195,3 +1258,4 @@ document.getElementById('clearGestureBtn').addEventListener('click', () => {
 applyHandViewMode();
 initTransformerLite();
 renderGestureSamples();
+renderHandVariantButtons();

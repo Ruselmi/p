@@ -67,3 +67,4 @@ Lalu buka `http://localhost:8000`.
 - Integrasi **Three.js** untuk animasi 3D realtime pada panel Hand AI.
 - Integrasi **Transformer.js** (Xenova Transformers) untuk warmup AI model dan status readiness di UI.
 - Ditambahkan **10 preset animasi gesture** (jari 1 s/d 10+) yang memicu kombinasi pulse, sticker, blackhole/whitehole, fog, dan burst 3D partikel.
+- Ada panel **Preview Animasi Hand (10 Varian)** untuk melihat apa saja aksi yang tersedia dan hasil efeknya secara langsung (klik varian atau "Play Semua Varian").
