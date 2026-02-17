@@ -7,7 +7,7 @@
  * 1. Single File (All-in-One)
  * 2. Non-blocking Music Player (Zelda, Mario, Indonesia Raya, dll)
  * 3. NTP Time & Auto School Bell (07:00, 10:00, 14:00)
- * 4. Safety System (Gas/Smoke Telegram Alert)
+ * 4. Safety System (Gas/Smoke Telegram Alert - Throttled)
  * 5. Dashboard Glassmorphism (Minified)
  */
 
@@ -28,6 +28,7 @@
 #define PIN_LDR         34 // ADC1
 #define PIN_MQ135       35 // ADC1 (Air Quality)
 #define PIN_MQ_DO       27 // Digital Output from MQ Sensor (Data Pendukung)
+#define PIN_LDR_DO      25 // Digital Output LDR (Data Pendukung)
 #define PIN_MQ2         33 // ADC1 (Smoke/Cigarette)
 #define PIN_SOUND       32 // ADC1
 #define PIN_TRIG        5
@@ -59,11 +60,12 @@ String chat_id   = "6383896382";
 float t = 0, h = 0, dist = 0, db = 0;
 int gas = 0, lux = 0, mq2_val = 0;
 int gas_dig = 1; // 1 = Aman, 0 = Detect (active low usually)
+int ldr_dig = 1; // 1 = Terang/Gelap (tergantung tuning)
 bool st_fan = false, st_lamp = false, mode_auto = true;
 bool ai_mode = false;
 String mood = "Netral";
 String health_stat = "OK";
-unsigned long last_sensor = 0, last_bot = 0, last_bell_check = 0;
+unsigned long last_sensor = 0, last_bot = 0, last_bell_check = 0, last_alert = 0;
 
 // Music
 bool is_playing = false;
@@ -205,11 +207,18 @@ void handleTelegram(int numNewMessages);
 void playSong(int id);
 void checkSchedule();
 String getFormattedTime();
-void handleScan(); // Added WiFi Scan prototype
+void handleScan();
 
 // ================= WEB DASHBOARD (MINIFIED) =================
 // Minified "Glassmorphism" Dashboard with Piano & References
-const char HTML_PAGE[] PROGMEM = R"=====(<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Smart Class</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"><style>:root{--bg:#0f172a;--card:rgba(30,41,59,0.7);--p:#6366f1;--t:#f8fafc;--ok:#10b981;--err:#ef4444}body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--t);margin:0;padding:20px}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:15px}.c{background:var(--card);padding:15px;border-radius:15px;text-align:center;border:1px solid rgba(255,255,255,0.1)}.v{font-size:1.8rem;font-weight:800}.u{font-size:0.8rem;color:#94a3b8}button{width:100%;padding:12px;border:none;border-radius:10px;font-weight:600;margin-top:5px;cursor:pointer;color:#fff}.b-on{background:var(--p)}.b-off{background:var(--err)}.grp{display:flex;gap:5px}input{width:100%;padding:10px;margin:5px 0;border-radius:8px;border:1px solid #475569;background:#334155;color:#fff}.keys{display:flex;overflow-x:auto;gap:2px;padding:5px;background:#000;border-radius:8px}.k{min-width:30px;height:80px;background:#fff;border-radius:0 0 4px 4px;cursor:pointer}.k:active{background:#ccc}.badge{padding:3px 8px;border-radius:20px;font-size:0.7rem;background:#334155}.badge.ok{color:var(--ok);background:rgba(16,185,129,0.2)}.badge.err{color:var(--err);background:rgba(239,68,68,0.2)}</style></head><body><div style="max-width:800px;margin:0 auto"><h2 style="text-align:center;color:var(--p)">Smart Class Ultimate</h2><div style="text-align:center;margin-bottom:15px;font-size:0.8rem" id="time">Loading...</div><div class="g"><div class="c"><h3>Suhu</h3><div class="v" id="t">-</div><span class="u">°C (18-30)</span></div><div class="c"><h3>Lembab</h3><div class="v" id="h">-</div><span class="u">% (40-60)</span></div><div class="c"><h3>Gas</h3><div class="v" id="g">-</div><span class="u">PPM</span></div><div class="c"><h3>Rokok (MQ2)</h3><div class="v" id="mq2">-</div><span class="u">Val</span></div><div class="c" style="grid-column:span 2;text-align:left"><h3>Control</h3><div class="grp"><button onclick="c('fan_toggle')" class="b-on">KIPAS</button><button onclick="c('lamp_toggle')" class="b-on">LAMPU</button></div><button onclick="c('auto_toggle')" style="background:#475569">MODE AUTO: <span id="am">ON</span></button></div><div class="c" style="grid-column:span 2"><h3>Music Player</h3><div class="grp"><button onclick="c('music_play&id=0')" class="b-on">MARIO</button><button onclick="c('music_play&id=1')" class="b-on">ZELDA</button><button onclick="c('music_play&id=2')" class="b-on">INDO RAYA</button></div><button onclick="c('music_stop')" class="b-off">STOP</button><div class="keys" style="margin-top:10px"><div class="k" onmousedown="p(262)"></div><div class="k" onmousedown="p(294)"></div><div class="k" onmousedown="p(330)"></div><div class="k" onmousedown="p(349)"></div><div class="k" onmousedown="p(392)"></div><div class="k" onmousedown="p(440)"></div><div class="k" onmousedown="p(494)"></div><div class="k" onmousedown="p(523)"></div></div></div><div class="c" style="grid-column:span 2;text-align:left"><h3>Settings</h3><form action="/save" method="POST"><div style="display:flex;gap:5px"><input type="text" name="ssid" id="ssid" placeholder="SSID"><button type="button" onclick="scanWifi()" style="width:80px;background:#6366f1">SCAN</button></div><div id="wl" style="display:none;background:#1e293b;padding:5px;border-radius:5px;margin-bottom:5px"></div><input type="text" name="pass" placeholder="Pass"><input type="text" name="bot" placeholder="Bot Token"><input type="text" name="id" placeholder="Chat ID"><button class="b-on">SAVE</button></form></div></div><div style="text-align:center;margin-top:20px"><a href="/csv" style="color:var(--p)">Download Log</a></div></div><script>function u(){fetch('/data?ts='+Date.now()).then(r=>r.json()).then(d=>{document.getElementById('t').innerText=d.t.toFixed(1);document.getElementById('h').innerText=d.h.toFixed(0);document.getElementById('g').innerText=d.gas;document.getElementById('mq2').innerText=d.mq2;document.getElementById('am').innerText=d.auto?"ON":"MANUAL";document.getElementById('time').innerText=d.time})}function c(a){fetch('/cmd?do='+a).then(u)}function p(f){fetch('/cmd?do=tone&freq='+f)}function scanWifi(){var l=document.getElementById('wl');l.style.display='block';l.innerHTML='Scanning...';fetch('/scan').then(r=>r.json()).then(d=>{if(d.status==='scanning'){setTimeout(scanWifi,1000);return}l.innerHTML='';d.forEach(s=>{var x=document.createElement('div');x.innerText=s;x.style.padding='5px';x.style.cursor='pointer';x.onclick=()=>{document.getElementById('ssid').value=s;l.style.display='none'};l.appendChild(x)})})}setInterval(u,2000);u()</script></body></html>)=====";
+const char HTML_PAGE[] PROGMEM = R"=====(<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Smart Class</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"><style>:root{--bg:#0f172a;--card:rgba(30,41,59,0.7);--p:#6366f1;--t:#f8fafc;--ok:#10b981;--err:#ef4444}body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--t);margin:0;padding:20px}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:15px}.c{background:var(--card);padding:15px;border-radius:15px;text-align:center;border:1px solid rgba(255,255,255,0.1)}.v{font-size:1.8rem;font-weight:800}.u{font-size:0.8rem;color:#94a3b8}button{width:100%;padding:12px;border:none;border-radius:10px;font-weight:600;margin-top:5px;cursor:pointer;color:#fff}.b-on{background:var(--p)}.b-off{background:var(--err)}.grp{display:flex;gap:5px}input{width:100%;padding:10px;margin:5px 0;border-radius:8px;border:1px solid #475569;background:#334155;color:#fff}.keys{display:flex;overflow-x:auto;gap:2px;padding:5px;background:#000;border-radius:8px}.k{min-width:30px;height:80px;background:#fff;border-radius:0 0 4px 4px;cursor:pointer}.k:active{background:#ccc}.badge{padding:3px 8px;border-radius:20px;font-size:0.7rem;background:#334155}.badge.ok{color:var(--ok);background:rgba(16,185,129,0.2)}.badge.err{color:var(--err);background:rgba(239,68,68,0.2)}</style></head><body><div style="max-width:800px;margin:0 auto"><h2 style="text-align:center;color:var(--p)">Smart Class Ultimate</h2><div style="text-align:center;margin-bottom:15px;font-size:0.8rem" id="time">Loading...</div><div class="g"><div class="c"><h3>Suhu</h3><div class="v" id="t">-</div><span class="u">°C (18-30)</span></div><div class="c"><h3>Lembab</h3><div class="v" id="h">-</div><span class="u">% (40-60)</span></div><div class="c"><h3>Gas</h3><div class="v" id="g">-</div><span class="u">PPM</span></div><div class="c"><h3>Rokok (MQ2)</h3><div class="v" id="mq2">-</div><span class="u">Val</span></div><div class="c" style="grid-column:span 2;text-align:left"><h3>Control</h3><div class="grp"><button onclick="c('fan_toggle')" class="b-on">KIPAS</button><button onclick="c('lamp_toggle')" class="b-on">LAMPU</button></div><button onclick="c('auto_toggle')" style="background:#475569">MODE AUTO: <span id="am">ON</span></button></div><div class="c" style="grid-column:span 2"><h3>Music Player</h3><div class="grp"><button onclick="c('music_play&id=0')" class="b-on">MARIO</button><button onclick="c('music_play&id=1')" class="b-on">ZELDA</button><button onclick="c('music_play&id=2')" class="b-on">INDO RAYA</button></div><button onclick="c('music_stop')" class="b-off">STOP</button><div class="keys" style="margin-top:10px"><div class="k" onmousedown="p(262)"></div><div class="k" onmousedown="p(294)"></div><div class="k" onmousedown="p(330)"></div><div class="k" onmousedown="p(349)"></div><div class="k" onmousedown="p(392)"></div><div class="k" onmousedown="p(440)"></div><div class="k" onmousedown="p(494)"></div><div class="k" onmousedown="p(523)"></div></div></div><div class="c" style="grid-column:span 2;text-align:left"><h3>Settings</h3><form action="/save" method="POST"><div style="display:flex;gap:5px"><input type="text" name="ssid" id="ssid" placeholder="SSID"><button type="button" onclick="scanWifi()" style="width:80px;background:#6366f1">SCAN</button></div><div id="wl" style="display:none;background:#1e293b;padding:5px;border-radius:5px;margin-bottom:5px"></div><input type="text" name="pass" placeholder="Pass"><input type="text" name="bot" placeholder="Bot Token"><input type="text" name="id" placeholder="Chat ID"><button class="b-on">SAVE</button></form></div></div><div style="text-align:center;margin-top:20px"><a href="/csv" style="color:var(--p)">Download Log</a></div></div><script>function u(){fetch('/data?ts='+Date.now()).then(r=>r.json()).then(d=>{document.getElementById('t').innerText=d.t.toFixed(1);document.getElementById('h').innerText=d.h.toFixed(0);
+    // Display Gas with Alert Status
+    let gStat = d.gas_dig==0 ? " (!)" : "";
+    document.getElementById('g').innerText=d.gas + gStat;
+    document.getElementById('g').style.color = d.gas_dig==0 ? '#ef4444' : '#f8fafc';
+
+    document.getElementById('mq2').innerText=d.mq2;
+    document.getElementById('am').innerText=d.auto?"ON":"MANUAL";document.getElementById('time').innerText=d.time})}function c(a){fetch('/cmd?do='+a).then(u)}function p(f){fetch('/cmd?do=tone&freq='+f)}function scanWifi(){var l=document.getElementById('wl');l.style.display='block';l.innerHTML='Scanning...';fetch('/scan').then(r=>r.json()).then(d=>{if(d.status==='scanning'){setTimeout(scanWifi,1000);return}l.innerHTML='';d.forEach(s=>{var x=document.createElement('div');x.innerText=s;x.style.padding='5px';x.style.cursor='pointer';x.onclick=()=>{document.getElementById('ssid').value=s;l.style.display='none'};l.appendChild(x)})})}setInterval(u,2000);u()</script></body></html>)=====";
 
 // ================= SETUP =================
 void setup() {
@@ -221,6 +230,7 @@ void setup() {
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
   pinMode(PIN_MQ_DO, INPUT);
+  pinMode(PIN_LDR_DO, INPUT); // LDR Digital Input
 
   // LEDC Setup
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
@@ -316,18 +326,28 @@ void readSensors() {
   gas = analogRead(PIN_MQ135);
   gas_dig = digitalRead(PIN_MQ_DO); // Baca data digital pendukung
   mq2_val = analogRead(PIN_MQ2);
+
   lux = analogRead(PIN_LDR);
+  ldr_dig = digitalRead(PIN_LDR_DO); // Baca digital LDR
+
   int raw_sound = analogRead(PIN_SOUND);
   db = (raw_sound / 4095.0) * 100.0; // Calibration rough
 
-  // Safety Logic (Gas/Smoke) - Cek Analog ATAU Digital (Low = Detect biasanya)
-  bool gas_alert = (gas > 2500) || (gas_dig == LOW);
+  // Debug Serial
+  if(mq2_val > 2000) Serial.println("AI:ROKOK TERDETEKSI! 🚭 T:" + String(t));
 
-  if (gas_alert || mq2_val > 2500) {
-    if (WiFi.status() == WL_CONNECTED) {
+  // Safety Logic (Gas/Smoke) - THROTTLED to once every 30s
+  bool gas_alert = (gas > 2500) || (gas_dig == LOW);
+  bool smoke_alert = (mq2_val > 2500);
+  unsigned long now = millis();
+
+  if (gas_alert || smoke_alert) {
+    // Only send alert if enough time passed
+    if (WiFi.status() == WL_CONNECTED && (now - last_alert > 30000)) {
+        last_alert = now;
         String alert = "⚠️ BAHAYA: ";
-        if (gas_alert) alert += "Gas/Udara Buruk (" + String(gas) + "/" + (gas_dig?"HIGH":"LOW") + ") ";
-        if (mq2_val > 2500) alert += "Asap/Rokok (" + String(mq2_val) + ")";
+        if (gas_alert) alert += "Gas/Udara Buruk (" + String(gas) + ") ";
+        if (smoke_alert) alert += "Asap/Rokok (" + String(mq2_val) + ")";
         bot.sendMessage(chat_id, alert, "");
     }
     ledcWriteTone(PWM_CHANNEL, 1000); // Alarm
@@ -343,8 +363,10 @@ void logicAuto() {
   if (t > 28.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
   else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
 
-  // Logic: Lux < 500 -> Lamp ON
-  if (lux < 500) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
+  // Logic: Lux < 500 OR LDR Digital Trigger -> Lamp ON
+  // Assuming LDR DO goes LOW when Dark (or HIGH depending on module), usually adjustable.
+  // We use Analog priority, but Digital as backup if Analog fails/drifts
+  if (lux < 500 || ldr_dig == HIGH) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
   else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
 }
 
@@ -441,6 +463,8 @@ void handleJson() {
   json += "\"gas\":" + String(gas) + ",";
   json += "\"gas_dig\":" + String(gas_dig) + ",";
   json += "\"mq2\":" + String(mq2_val) + ",";
+  json += "\"lux\":" + String(lux) + ",";
+  json += "\"ldr_dig\":" + String(ldr_dig) + ",";
   json += "\"db\":" + String(db) + ",";
   json += "\"fan\":" + String(st_fan) + ",";
   json += "\"lamp\":" + String(st_lamp) + ",";
