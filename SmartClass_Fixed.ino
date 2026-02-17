@@ -52,7 +52,7 @@ Preferences pref;
 
 // Credentials (Editable via Dashboard)
 String ssid_name = "ELSON";
-String ssid_pass = "elso250129";
+String ssid_pass = "elson250129";
 String bot_token = "8324067380:AAHfMtWfLdtoYByjnrm2sgy90z3y01V6C-I";
 String chat_id   = "6383896382";
 
