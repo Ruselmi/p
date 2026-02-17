@@ -1,14 +1,12 @@
 /*
- * SMART CLASS IOT - ULTIMATE SINGLE FILE EDITION
+ * SMART CLASS IOT - PURE MONITORING EDITION (WHO/KEMENKES/SNI STANDARDS)
  * Board: ESP32 Dev Module
- * Fitur: Monitoring, Telegram Bot, Music (37 Lagu), Web Dashboard Glassmorphism, AI Mode, Smoke/Gas Alert, School Bell
- *
- * --- FIXED & IMPROVED VERSION ---
- * 1. Single File (All-in-One)
- * 2. Non-blocking Music Player (Zelda, Mario, Indonesia Raya, dll)
- * 3. NTP Time & Auto School Bell (07:00, 10:00, 14:00)
- * 4. Safety System (Gas/Smoke Telegram Alert - Throttled)
- * 5. Dashboard Glassmorphism (Minified)
+ * Fitur: Monitoring Lingkungan Kelas, Telegram Alert, Auto Bell, Web Dashboard Minimalis
+ * * --- STANDAR REFERENSI ---
+ * 1. Suhu: 18-30°C (Kemenkes/SNI)
+ * 2. Kebisingan: < 55 dB (WHO School Guidelines)
+ * 3. Pencahayaan: 250 - 300 Lux (SNI Ruang Kelas)
+ * 4. Keamanan: Deteksi Api (Flame) & Asap Rokok (MQ-2)
  */
 
 #include <WiFi.h>
@@ -20,21 +18,29 @@
 #include <Preferences.h>
 #include "time.h"
 
-// ================= PINS =================
+// ================= KONFIGURASI PIN (FIXED) =================
 #define PIN_DHT         18
 #define PIN_BUZZER      26
 #define PIN_FAN         4
 #define PIN_LAMP        2
+
+// SENSOR CAHAYA (LDR)
 #define PIN_LDR         34 // ADC1
-#define PIN_MQ135       35 // ADC1 (Air Quality)
-#define PIN_MQ_DO       27 // Digital Output from MQ Sensor (Data Pendukung)
-#define PIN_LDR_DO      25 // Digital Output LDR (Data Pendukung)
-#define PIN_MQ2         33 // ADC1 (Smoke/Cigarette)
+#define PIN_LDR_DO      25 // Digital (DO)
+
+// SENSOR GAS (MQ-2) - Mendeteksi Asap Rokok
+#define PIN_MQ2         35 // ADC1 - (Sesuai Request)
+#define PIN_MQ2_DO      27 // Digital (DO)
+
+// SENSOR API (FLAME) - Mendeteksi Kebakaran
+// Dipindah ke 33 karena 35 dipakai MQ2
+#define PIN_FLAME       33 // ADC1
+
 #define PIN_SOUND       32 // ADC1
 #define PIN_TRIG        5
 #define PIN_ECHO        19
 
-// ================= CONFIG =================
+// ================= SYSTEM CONFIG =================
 #define PWM_CHANNEL     0
 #define PWM_RESOLUTION  8
 #define PWM_FREQ        2000
@@ -50,26 +56,21 @@ WiFiClientSecure client;
 UniversalTelegramBot bot("", client);
 Preferences pref;
 
-// Credentials (Editable via Dashboard)
+// Credentials
 String ssid_name = "ELSON";
 String ssid_pass = "elson250129";
 String bot_token = "8324067380:AAHfMtWfLdtoYByjnrm2sgy90z3y01V6C-I";
 String chat_id   = "6383896382";
 
-// Data
-float t = 0, h = 0, dist = 0, db = 0;
-int gas = 0, lux = 0, mq2_val = 0;
-int gas_dig = 1; // 1 = Aman, 0 = Detect (active low usually)
-int ldr_dig = 1; // 1 = Terang/Gelap (tergantung tuning)
-bool st_fan = false, st_lamp = false, mode_auto = true;
-bool ai_mode = false;
-String mood = "Netral";
-String health_stat = "OK";
+// Data Sensor
+float t = 0, h = 0, db = 0;
+int lux = 0, mq2_val = 0, flame_val = 4095;
+int ldr_do = 1, mq2_do = 1;
+String safety_status = "AMAN"; // Status Gabungan (Api & Asap)
 unsigned long last_sensor = 0, last_bot = 0, last_bell_check = 0, last_alert = 0, last_wifi_check = 0;
 
-// Music
+// Music Player
 bool is_playing = false;
-int current_song_id = 0;
 int note_index = 0;
 unsigned long last_note_start = 0;
 bool note_state = false;
@@ -77,168 +78,248 @@ const int* current_melody;
 const int* current_tempo;
 int current_len = 0;
 
-// ================= MUSIK DATA (PROGMEM) =================
-#define NOTE_B0  31
-#define NOTE_C1  33
-#define NOTE_CS1 35
-#define NOTE_D1  37
-#define NOTE_DS1 39
-#define NOTE_E1  41
-#define NOTE_F1  44
-#define NOTE_FS1 46
-#define NOTE_G1  49
-#define NOTE_GS1 52
-#define NOTE_A1  55
-#define NOTE_AS1 58
-#define NOTE_B1  62
-#define NOTE_C2  65
-#define NOTE_CS2 69
-#define NOTE_D2  73
-#define NOTE_DS2 78
-#define NOTE_E2  82
-#define NOTE_F2  87
-#define NOTE_FS2 93
-#define NOTE_G2  98
-#define NOTE_GS2 104
-#define NOTE_A2  110
-#define NOTE_AS2 117
-#define NOTE_B2  123
-#define NOTE_C3  131
-#define NOTE_CS3 139
-#define NOTE_D3  147
-#define NOTE_DS3 156
-#define NOTE_E3  165
-#define NOTE_F3  175
-#define NOTE_FS3 185
-#define NOTE_G3  196
-#define NOTE_GS3 208
-#define NOTE_A3  220
-#define NOTE_AS3 233
-#define NOTE_B3  247
-#define NOTE_C4  262
-#define NOTE_CS4 277
-#define NOTE_D4  294
-#define NOTE_DS4 311
-#define NOTE_E4  330
-#define NOTE_F4  349
-#define NOTE_FS4 370
-#define NOTE_G4  392
-#define NOTE_GS4 415
-#define NOTE_A4  440
-#define NOTE_AS4 466
-#define NOTE_B4  494
-#define NOTE_C5  523
-#define NOTE_CS5 554
-#define NOTE_D5  587
-#define NOTE_DS5 622
-#define NOTE_E5  659
-#define NOTE_F5  698
-#define NOTE_FS5 740
-#define NOTE_G5  784
-#define NOTE_GS5 831
-#define NOTE_A5  880
-#define NOTE_AS5 932
-#define NOTE_B5  988
-#define NOTE_C6  1047
-#define NOTE_CS6 1109
-#define NOTE_D6  1175
-#define NOTE_DS6 1245
-#define NOTE_E6  1319
-#define NOTE_F6  1397
-#define NOTE_FS6 1480
-#define NOTE_G6  1568
-#define NOTE_GS6 1661
-#define NOTE_A6  1760
-#define NOTE_AS6 1865
-#define NOTE_B6  1976
-#define NOTE_C7  2093
-#define NOTE_CS7 2217
-#define NOTE_D7  2349
-#define NOTE_DS7 2489
-#define NOTE_E7  2637
-#define NOTE_F7  2794
-#define NOTE_FS7 2960
-#define NOTE_G7  3136
-#define NOTE_GS7 3322
-#define NOTE_A7  3520
-#define NOTE_AS7 3729
-#define NOTE_B7  3951
-#define NOTE_C8  4186
-#define NOTE_CS8 4435
-#define NOTE_D8  4699
-#define NOTE_DS8 4978
-#define REST      0
+// ================= DATA MUSIK =================
+#define NOTE_C4 262
+#define NOTE_D4 294
+#define NOTE_E4 330
+#define NOTE_F4 349
+#define NOTE_G4 392
+#define NOTE_A4 440
+#define NOTE_B4 494
+#define NOTE_C5 523
+#define NOTE_D5 587
+#define NOTE_E5 659
+#define NOTE_F5 698
+#define REST    0
 
-// --- SELECTED SONGS (to save space, but includes requested ones) ---
-const int song_mario_m[] PROGMEM = {NOTE_E5,NOTE_E5,REST,NOTE_E5,REST,NOTE_C5,NOTE_E5,REST,NOTE_G5,REST,NOTE_G4,REST,NOTE_C5,NOTE_G4,REST,NOTE_E4};
-const int song_mario_t[] PROGMEM = {8,8,8,8,8,8,8,8,4,4,4,4,4,8,4,4};
-
-const int song_zelda_m[] PROGMEM = {NOTE_D4,NOTE_F4,NOTE_D5,NOTE_D4,NOTE_F4,NOTE_D5,NOTE_E5,NOTE_F5,NOTE_E5,NOTE_F5,NOTE_E5,NOTE_C5,NOTE_A4};
-const int song_zelda_t[] PROGMEM = {8,8,2,8,8,2,6,16,6,16,6,8,2};
-
-const int song_indo_m[] PROGMEM = {NOTE_G4,NOTE_A4,NOTE_G4,NOTE_E4,NOTE_G4,NOTE_C5,NOTE_E5,NOTE_D5,NOTE_C5,NOTE_B4,NOTE_A4,NOTE_B4,NOTE_A4,NOTE_G4};
-const int song_indo_t[] PROGMEM = {8,8,4,4,4,4,2,4,4,4,4,4,4,4};
-
-const int song_nyan_m[] PROGMEM = {NOTE_DS5,NOTE_E5,NOTE_FS5,NOTE_B5,NOTE_E5,NOTE_DS5,NOTE_E5,NOTE_FS5,NOTE_B5,NOTE_DS6,NOTE_E6,NOTE_DS6,NOTE_AS5,NOTE_B5};
-const int song_nyan_t[] PROGMEM = {8,8,8,8,8,8,8,8,8,8,8,8,8,8};
-
-const int song_bell_m[] PROGMEM = {NOTE_C5,NOTE_E5,NOTE_G5,NOTE_C6};
-const int song_bell_t[] PROGMEM = {4,4,4,2};
-
-// SONG TABLE
-struct Song { const char* name; const int* m; const int* t; int len; };
-const Song SONGS[] = {
-  {"0. Mario Short", song_mario_m, song_mario_t, 16},
-  {"1. Zelda Storms", song_zelda_m, song_zelda_t, 13},
-  {"2. Indonesia Raya", song_indo_m, song_indo_t, 14},
-  {"3. Nyan Cat", song_nyan_m, song_nyan_t, 14},
-  {"4. School Bell", song_bell_m, song_bell_t, 4}
-};
+const int song_bell_m[] = {NOTE_C5, NOTE_E5, NOTE_G5, NOTE_C5};
+const int song_bell_t[] = {4, 4, 4, 2};
 
 // ================= FUNCTION PROTOTYPES =================
 void handleSaveSettings();
 void readSensors();
-void logicAuto();
 void handleJson();
 void handleCommand();
 void handleDownload();
 void handleMusic();
 void handleTelegram(int numNewMessages);
-void playSong(int id);
+void playBell();
 void checkSchedule();
 String getFormattedTime();
 void handleScan();
 
-// ================= WEB DASHBOARD (MINIFIED) =================
-// Minified "Glassmorphism" Dashboard with Piano & References
-const char HTML_PAGE[] PROGMEM = R"=====(<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Smart Class</title><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet"><style>:root{--bg:#0f172a;--card:rgba(30,41,59,0.7);--p:#6366f1;--t:#f8fafc;--ok:#10b981;--err:#ef4444}body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--t);margin:0;padding:20px}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:15px}.c{background:var(--card);padding:15px;border-radius:15px;text-align:center;border:1px solid rgba(255,255,255,0.1)}.v{font-size:1.8rem;font-weight:800}.u{font-size:0.8rem;color:#94a3b8}button{width:100%;padding:12px;border:none;border-radius:10px;font-weight:600;margin-top:5px;cursor:pointer;color:#fff}.b-on{background:var(--p)}.b-off{background:var(--err)}.grp{display:flex;gap:5px}input{width:100%;padding:10px;margin:5px 0;border-radius:8px;border:1px solid #475569;background:#334155;color:#fff}.keys{display:flex;overflow-x:auto;gap:2px;padding:5px;background:#000;border-radius:8px}.k{min-width:30px;height:80px;background:#fff;border-radius:0 0 4px 4px;cursor:pointer}.k:active{background:#ccc}.badge{padding:3px 8px;border-radius:20px;font-size:0.7rem;background:#334155}.badge.ok{color:var(--ok);background:rgba(16,185,129,0.2)}.badge.err{color:var(--err);background:rgba(239,68,68,0.2)}</style></head><body><div style="max-width:800px;margin:0 auto"><h2 style="text-align:center;color:var(--p)">Smart Class Ultimate</h2><div style="text-align:center;margin-bottom:15px;font-size:0.8rem" id="time">Loading...</div><div class="g"><div class="c"><h3>Suhu</h3><div class="v" id="t">-</div><span class="u">°C (18-30)</span></div><div class="c"><h3>Lembab</h3><div class="v" id="h">-</div><span class="u">% (40-60)</span></div><div class="c"><h3>Gas</h3><div class="v" id="g">-</div><span class="u">PPM</span></div><div class="c"><h3>Rokok (MQ2)</h3><div class="v" id="mq2">-</div><span class="u">Val</span></div><div class="c" style="grid-column:span 2;text-align:left"><h3>Control</h3><div class="grp"><button onclick="c('fan_toggle')" class="b-on">KIPAS</button><button onclick="c('lamp_toggle')" class="b-on">LAMPU</button></div><button onclick="c('auto_toggle')" style="background:#475569">MODE AUTO: <span id="am">ON</span></button></div><div class="c" style="grid-column:span 2"><h3>Music Player</h3><div class="grp"><button onclick="c('music_play&id=0')" class="b-on">MARIO</button><button onclick="c('music_play&id=1')" class="b-on">ZELDA</button><button onclick="c('music_play&id=2')" class="b-on">INDO RAYA</button></div><button onclick="c('music_stop')" class="b-off">STOP</button><div class="keys" style="margin-top:10px"><div class="k" onmousedown="p(262)"></div><div class="k" onmousedown="p(294)"></div><div class="k" onmousedown="p(330)"></div><div class="k" onmousedown="p(349)"></div><div class="k" onmousedown="p(392)"></div><div class="k" onmousedown="p(440)"></div><div class="k" onmousedown="p(494)"></div><div class="k" onmousedown="p(523)"></div></div></div><div class="c" style="grid-column:span 2;text-align:left"><h3>Settings</h3><form action="/save" method="POST"><div style="display:flex;gap:5px"><input type="text" name="ssid" id="ssid" placeholder="SSID"><button type="button" onclick="scanWifi()" style="width:80px;background:#6366f1">SCAN</button></div><div id="wl" style="display:none;background:#1e293b;padding:5px;border-radius:5px;margin-bottom:5px"></div><input type="text" name="pass" placeholder="Pass"><input type="text" name="bot" placeholder="Bot Token"><input type="text" name="id" placeholder="Chat ID"><button class="b-on">SAVE</button></form></div></div><div style="text-align:center;margin-top:20px"><a href="/csv" style="color:var(--p)">Download Log</a></div></div><script>function u(){fetch('/data?ts='+Date.now()).then(r=>r.json()).then(d=>{document.getElementById('t').innerText=d.t.toFixed(1);document.getElementById('h').innerText=d.h.toFixed(0);
-    // Display Gas with Alert Status
-    let gStat = d.gas_dig==0 ? " (!)" : "";
-    document.getElementById('g').innerText=d.gas + gStat;
-    document.getElementById('g').style.color = d.gas_dig==0 ? '#ef4444' : '#f8fafc';
+// ================= WEB DASHBOARD (MINIMALIS) =================
+const char HTML_PAGE[] PROGMEM = R"=====(
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Class Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f8fafc;--card:#ffffff;--text:#1e293b;--acc:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--danger:#ef4444}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);margin:0;padding:20px}
+.container{max-width:900px;margin:0 auto}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}
+h1{font-size:1.5rem;margin:0;font-weight:600}
+.time-badge{background:var(--text);color:#fff;padding:5px 15px;border-radius:20px;font-size:0.9rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}
+.card{background:var(--card);padding:25px;border-radius:16px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);border:1px solid #e2e8f0}
+.card h3{margin:0 0 10px 0;font-size:0.85rem;color:#64748b;text-transform:uppercase;letter-spacing:1px}
+.value-group{display:flex;align-items:baseline;gap:5px}
+.value{font-size:2.5rem;font-weight:600;color:var(--text)}
+.unit{font-size:1rem;color:#94a3b8}
+.standard{margin-top:15px;padding-top:15px;border-top:1px solid #f1f5f9;font-size:0.8rem;color:#64748b;display:flex;justify-content:space-between}
+.badge{padding:4px 8px;border-radius:6px;font-size:0.75rem;font-weight:600}
+.b-ok{background:#dcfce7;color:#166534}.b-warn{background:#fef3c7;color:#92400e}.b-danger{background:#fee2e2;color:#991b1b}
+.status-indicator{height:10px;width:10px;border-radius:50%;display:inline-block;margin-right:5px}
+.footer{text-align:center;margin-top:40px;font-size:0.8rem;color:#94a3b8}
+.setup-box{margin-top:30px;background:#fff;padding:20px;border-radius:12px;display:none}
+input{padding:10px;border:1px solid #cbd5e1;border-radius:8px;width:100%;margin-bottom:10px;box-sizing:border-box}
+button{background:var(--text);color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Monitoring Kelas IoT</h1>
+      <small style="color:#64748b">Sensor Integration System</small>
+    </div>
+    <div class="time-badge" id="clock">--:--</div>
+  </header>
 
-    document.getElementById('mq2').innerText=d.mq2;
-    document.getElementById('am').innerText=d.auto?"ON":"MANUAL";document.getElementById('time').innerText=d.time})}function c(a){fetch('/cmd?do='+a).then(u)}function p(f){fetch('/cmd?do=tone&freq='+f)}function scanWifi(){var l=document.getElementById('wl');l.style.display='block';l.innerHTML='Scanning...';fetch('/scan').then(r=>r.json()).then(d=>{if(d.status==='scanning'){setTimeout(scanWifi,1000);return}l.innerHTML='';d.forEach(s=>{var x=document.createElement('div');x.innerText=s;x.style.padding='5px';x.style.cursor='pointer';x.onclick=()=>{document.getElementById('ssid').value=s;l.style.display='none'};l.appendChild(x)})})}setInterval(u,2000);u()</script></body></html>)=====";
+  <div class="grid">
+    <!-- SUHU -->
+    <div class="card">
+      <h3>Temperatur</h3>
+      <div class="value-group"><span class="value" id="t">--</span><span class="unit">°C</span></div>
+      <div class="standard">
+        <span>Std: 18-30°C</span>
+        <span class="badge" id="t_s">-</span>
+      </div>
+    </div>
+
+    <!-- KELEMBABAN -->
+    <div class="card">
+      <h3>Kelembaban</h3>
+      <div class="value-group"><span class="value" id="h">--</span><span class="unit">%</span></div>
+      <div class="standard">
+        <span>Std: 45-70%</span>
+        <span class="badge" id="h_s">-</span>
+      </div>
+    </div>
+
+    <!-- CAHAYA -->
+    <div class="card">
+      <h3>Pencahayaan</h3>
+      <div class="value-group"><span class="value" id="lux">--</span><span class="unit">Lux</span></div>
+      <div class="standard">
+        <span>Std: 250-300 Lux (SNI)</span>
+        <span class="badge" id="lux_s">-</span>
+      </div>
+    </div>
+
+    <!-- SUARA -->
+    <div class="card">
+      <h3>Kebisingan</h3>
+      <div class="value-group"><span class="value" id="db">--</span><span class="unit">dB</span></div>
+      <div class="standard">
+        <span>Std: < 55 dB (WHO)</span>
+        <span class="badge" id="db_s">-</span>
+      </div>
+    </div>
+
+    <!-- KEAMANAN (API & ASAP) -->
+    <div class="card" style="grid-column: 1 / -1; border-left: 5px solid var(--ok);" id="safe_card">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <div>
+          <h3>Status Keamanan Kelas</h3>
+          <div class="value-group"><span class="value" id="safe_txt">AMAN</span></div>
+          <small style="color:#64748b">
+            Asap (MQ-2): <span id="mq2_val">0</span> | Api (Flame): <span id="flame_val">0</span>
+          </small>
+        </div>
+        <div style="font-size:3rem" id="safe_icon">🛡️</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center; margin-top:20px;">
+    <button onclick="document.getElementById('setup').style.display='block'">⚙️ Pengaturan</button>
+    <a href="/csv"><button style="background:#fff; color:#1e293b; border:1px solid #cbd5e1">📥 Download Data</button></a>
+  </div>
+
+  <div id="setup" class="setup-box">
+    <h3>Konfigurasi Sistem</h3>
+    <form action="/save" method="POST">
+      <input type="text" name="ssid" placeholder="WiFi SSID" id="ssid_in">
+      <button type="button" onclick="scanWifi()" style="font-size:0.8rem; margin-bottom:10px">🔍 Scan WiFi</button>
+      <div id="scan_res"></div>
+      <input type="password" name="pass" placeholder="WiFi Password">
+      <input type="text" name="bot" placeholder="Telegram Bot Token">
+      <input type="text" name="id" placeholder="Telegram Chat ID">
+      <button type="submit">Simpan & Restart</button>
+      <button type="button" onclick="this.parentElement.parentElement.style.display='none'" style="background:#ef4444">Tutup</button>
+    </form>
+  </div>
+
+  <div class="footer">
+    Referensi: Permenkes No.7/2019, SNI 6197:2011, WHO Guidelines.
+  </div>
+</div>
+
+<script>
+function eval(id, val, min, max, rev) {
+  let el = document.getElementById(id);
+  let ok = (val >= min && val <= max);
+  if(rev) ok = !ok;
+  if(ok) { el.innerText = "Sesuai"; el.className = "badge b-ok"; }
+  else { el.innerText = "Tidak Sesuai"; el.className = "badge b-danger"; }
+}
+
+function update() {
+  fetch('/data').then(r=>r.json()).then(d=>{
+    document.getElementById('clock').innerText = d.time;
+
+    // Suhu & Lembab
+    document.getElementById('t').innerText = d.t.toFixed(1);
+    eval('t_s', d.t, 18, 30, false);
+    document.getElementById('h').innerText = d.h.toFixed(0);
+    eval('h_s', d.h, 45, 70, false);
+
+    // Lux
+    document.getElementById('lux').innerText = d.lux;
+    let l_el = document.getElementById('lux_s');
+    if(d.lux < 250) { l_el.innerText="Kurang"; l_el.className="badge b-warn"; }
+    else if(d.lux > 700) { l_el.innerText="Silau"; l_el.className="badge b-warn"; }
+    else { l_el.innerText="Standar SNI"; l_el.className="badge b-ok"; }
+
+    // dB
+    document.getElementById('db').innerText = d.db.toFixed(1);
+    let db_el = document.getElementById('db_s');
+    if(d.db > 55) { db_el.innerText="Bising"; db_el.className="badge b-danger"; }
+    else { db_el.innerText="Kondusif"; db_el.className="badge b-ok"; }
+
+    // Safety (Api & Asap)
+    document.getElementById('mq2_val').innerText = d.mq2;
+    document.getElementById('flame_val').innerText = d.flame;
+
+    let s_txt = document.getElementById('safe_txt');
+    let s_card = document.getElementById('safe_card');
+    let s_icon = document.getElementById('safe_icon');
+
+    if(d.status == "FIRE") {
+      s_txt.innerText = "KEBAKARAN!";
+      s_card.style.borderColor = "#ef4444";
+      s_card.style.background = "#fee2e2";
+      s_txt.style.color = "#ef4444";
+      s_icon.innerText = "🔥";
+    } else if(d.status == "SMOKE") {
+      s_txt.innerText = "ASAP ROKOK!";
+      s_card.style.borderColor = "#f59e0b";
+      s_card.style.background = "#fef3c7";
+      s_txt.style.color = "#b45309";
+      s_icon.innerText = "🚬";
+    } else {
+      s_txt.innerText = "AMAN";
+      s_card.style.borderColor = "#22c55e";
+      s_card.style.background = "#ffffff";
+      s_txt.style.color = "#166534";
+      s_icon.innerText = "🛡️";
+    }
+  });
+}
+
+function scanWifi(){
+  document.getElementById('scan_res').innerText = "Scanning...";
+  fetch('/scan').then(r=>r.json()).then(d=>{
+    let html = "";
+    d.forEach(s=>{ html += `<div onclick="document.getElementById('ssid_in').value='${s}'" style="padding:5px;cursor:pointer;border-bottom:1px solid #eee">${s}</div>`; });
+    document.getElementById('scan_res').innerHTML = html;
+  });
+}
+
+setInterval(update, 2000);
+update();
+</script>
+</body>
+</html>
+)=====";
 
 // ================= SETUP =================
 void setup() {
   Serial.begin(115200);
 
-  // Pin Modes
-  pinMode(PIN_FAN, OUTPUT);
-  pinMode(PIN_LAMP, OUTPUT);
-  pinMode(PIN_TRIG, OUTPUT);
-  pinMode(PIN_ECHO, INPUT);
-  pinMode(PIN_MQ_DO, INPUT_PULLUP);   // Pullup biar default HIGH (Aman)
-  pinMode(PIN_LDR_DO, INPUT_PULLUP);  // Pullup
+  // Setup Pin Sensor
+  pinMode(PIN_LDR_DO, INPUT_PULLUP);
+  pinMode(PIN_MQ2_DO, INPUT_PULLUP);
+  pinMode(PIN_FLAME, INPUT); // Analog Read untuk Flame
 
-  // LEDC Setup
+  // Buzzer Setup
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(PIN_BUZZER, PWM_CHANNEL);
   ledcWriteTone(PWM_CHANNEL, 0);
-
-  // Analog Setup (Important for ESP32)
-  analogSetAttenuation(ADC_11db);
 
   dht.begin();
 
@@ -248,79 +329,58 @@ void setup() {
   ssid_pass = pref.getString("pass", ssid_pass);
   bot_token = pref.getString("bot", bot_token);
   chat_id   = pref.getString("id", chat_id);
-
   bot.updateToken(bot_token);
 
   // WiFi
-  Serial.print("Connecting to "); Serial.println(ssid_name);
   WiFi.mode(WIFI_AP_STA);
   WiFi.begin(ssid_name.c_str(), ssid_pass.c_str());
 
-  int try_c = 0;
-  while(WiFi.status() != WL_CONNECTED && try_c < 20) {
-    delay(500); Serial.print("."); try_c++;
-  }
+  unsigned long start = millis();
+  while(WiFi.status() != WL_CONNECTED && millis() - start < 10000) { delay(100); }
 
   if(WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Connected: " + WiFi.localIP().toString());
     configTime(GMT_OFFSET_SEC, DAY_LIGHT_OFFSET, NTP_SERVER);
-
-    // Startup Sound (Mario Short) - BLOCKING to allow sensor warmup
-    playSong(0);
-    while(is_playing) {
-      handleMusic();
-      delay(10);
-    }
+    playBell(); // Tanda sistem siap
   } else {
-    Serial.println("\nWiFi Fail. AP Mode: SmartClass_Setup");
-    WiFi.softAP("SmartClass_Setup", "12345678");
+    WiFi.softAP("SmartClass_Setup");
   }
 
   // Server
   client.setInsecure();
   server.on("/", [](){ server.send(200, "text/html", HTML_PAGE); });
   server.on("/data", handleJson);
-  server.on("/cmd", handleCommand);
-  server.on("/csv", handleDownload);
-  server.on("/scan", handleScan); // Add scan handler
   server.on("/save", HTTP_POST, handleSaveSettings);
-  server.enableCORS(true); // Enable CORS for testing
+  server.on("/scan", handleScan);
+  server.on("/csv", handleDownload);
   server.begin();
 }
 
 // ================= LOOP =================
 void loop() {
   server.handleClient();
-  handleMusic(); // Non-blocking music
+  handleMusic();
 
   unsigned long now = millis();
 
-  // 1. Read Sensors (Every 2s)
+  // 1. Read Sensors (2s)
   if (now - last_sensor > 2000) {
     last_sensor = now;
     readSensors();
-    logicAuto();
   }
 
-  // 2. Check Schedule (Every 1s to catch 00)
+  // 2. Schedule (1s)
   if (now - last_bell_check > 1000) {
     last_bell_check = now;
     checkSchedule();
   }
 
-  // 3. WiFi Auto Reconnect (Every 10s if disconnected)
-  if (WiFi.status() != WL_CONNECTED && (now - last_wifi_check > 10000)) {
-    last_wifi_check = now;
-    WiFi.reconnect();
-  }
-
-  // 4. Telegram (Every 3s, Pause if music playing)
-  if (WiFi.status() == WL_CONNECTED && now - last_bot > 3000 && !is_playing) {
+  // 3. Telegram (5s)
+  if (WiFi.status() == WL_CONNECTED && now - last_bot > 5000 && !is_playing) {
     last_bot = now;
-    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    while(numNewMessages) {
-      handleTelegram(numNewMessages);
-      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    int n = bot.getUpdates(bot.last_message_received + 1);
+    while(n) {
+      handleTelegram(n);
+      n = bot.getUpdates(bot.last_message_received + 1);
     }
   }
 }
@@ -328,172 +388,108 @@ void loop() {
 // ================= HANDLERS =================
 
 void readSensors() {
-  float _t = dht.readTemperature();
-  float _h = dht.readHumidity();
-  if(!isnan(_t)) t = _t;
-  if(!isnan(_h)) h = _h;
+  float t_read = dht.readTemperature();
+  float h_read = dht.readHumidity();
+  if(!isnan(t_read)) t = t_read;
+  if(!isnan(h_read)) h = h_read;
 
-  gas = analogRead(PIN_MQ135);
-  gas_dig = digitalRead(PIN_MQ_DO); // Baca data digital pendukung
-  mq2_val = analogRead(PIN_MQ2);
+  // LDR (Lux)
+  int raw_ldr = analogRead(PIN_LDR);
+  lux = map(4095 - raw_ldr, 0, 4095, 0, 1000);
 
-  lux = analogRead(PIN_LDR);
-  ldr_dig = digitalRead(PIN_LDR_DO); // Baca digital LDR
-
-  int raw_sound = analogRead(PIN_SOUND);
-  db = (raw_sound / 4095.0) * 100.0; // Calibration rough
-
-  // Safety Logic (Gas/Smoke)
-  // DATA UTAMA: Analog (gas > 3000)
-  // DATA CADANGAN: Digital (gas_dig == HIGH)
-  bool warmup_done = (millis() > 60000);
-
-  // Alert jika Analog Tinggi (Utama) ATAU Digital Detect (Cadangan)
-  bool gas_alert = (gas > 3000) || (gas_dig == HIGH);
-
-  // MQ2 Analog Threshold
-  bool smoke_alert = (mq2_val > 3500);
-  unsigned long now = millis();
-
-  // Debug Serial (Sync with Alert Threshold)
-  if(smoke_alert && warmup_done) Serial.println("AI:ROKOK TERDETEKSI! 🚭 Val:" + String(mq2_val));
-
-  if ((gas_alert || smoke_alert) && warmup_done) {
-    if (WiFi.status() == WL_CONNECTED && (now - last_alert > 30000)) {
-        last_alert = now;
-        String alert = "⚠️ BAHAYA: ";
-        if (gas_alert) alert += "Gas Bocor/Udara Buruk! (Digital Trigger) ";
-        if (smoke_alert) alert += "Asap Rokok Terdeteksi! (" + String(mq2_val) + ") ";
-        bot.sendMessage(chat_id, alert, "");
+  // Sound (dB)
+  unsigned long startMillis = millis();
+  float peakToPeak = 0;
+  unsigned int signalMax = 0;
+  unsigned int signalMin = 4095;
+  while (millis() - startMillis < 50) {
+    int sample = analogRead(PIN_SOUND);
+    if (sample < 1024) {
+       if (sample > signalMax) signalMax = sample;
+       else if (sample < signalMin) signalMin = sample;
     }
-    ledcWriteTone(PWM_CHANNEL, 1000); // Alarm
-  } else if (!is_playing) {
-    ledcWriteTone(PWM_CHANNEL, 0);
   }
-}
+  peakToPeak = signalMax - signalMin;
+  db = 20 * log10(peakToPeak / 4095.0 * 3.3) + 50.0;
+  if(db < 0) db = 0;
 
-void logicAuto() {
-  if (!mode_auto) return;
+  // MQ-2 (Smoke)
+  int mq2_raw = analogRead(PIN_MQ2);
+  mq2_do = digitalRead(PIN_MQ2_DO);
+  mq2_val = (mq2_val * 0.7) + (mq2_raw * 0.3); // Smooth filter
 
-  // Logic: Temp > 28 -> Fan ON
-  if (t > 28.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
-  else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
+  // FLAME SENSOR (Fire)
+  // Sensor Api biasanya nilai rendah (< 500 atau 1000) jika ada api
+  // Nilai 4095 artinya tidak ada api (Gelap IR)
+  int flame_raw = analogRead(PIN_FLAME);
+  flame_val = (flame_val * 0.7) + (flame_raw * 0.3); // Smooth filter
 
-  // Logic: Lux < 500 OR LDR Digital Trigger -> Lamp ON
-  // UPDATE: Inverted LDR Digital Logic based on feedback (Active LOW = Dark)
-  // Logic: Lux < 500 (Utama) OR LDR Digital Trigger (Cadangan) -> Lamp ON
-  if (lux < 500 || ldr_dig == LOW) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
-  else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
-}
+  // --- SAFETY LOGIC ---
+  safety_status = "AMAN";
 
-void checkSchedule() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)) return;
+  // Prioritas 1: API (Bahaya Tinggi)
+  // Threshold < 1000 artinya IR kuat terdeteksi (Api)
+  if (flame_val < 1000) {
+    safety_status = "FIRE";
+    if (!is_playing && millis() - last_alert > 10000) {
+      // Alarm Kebakaran (Nada Tinggi Cepat)
+      ledcWriteTone(PWM_CHANNEL, 2000); delay(100); ledcWriteTone(PWM_CHANNEL, 0); delay(100);
+      ledcWriteTone(PWM_CHANNEL, 2000); delay(100); ledcWriteTone(PWM_CHANNEL, 0);
 
-  // Simple Bell Logic (Trigger once per minute 00 sec)
-  if (timeinfo.tm_sec == 0) {
-    if (timeinfo.tm_hour == 7 && timeinfo.tm_min == 0) playSong(4); // Entry
-    if (timeinfo.tm_hour == 10 && timeinfo.tm_min == 0) playSong(4); // Break
-    if (timeinfo.tm_hour == 14 && timeinfo.tm_min == 0) playSong(4); // End
+      if (WiFi.status() == WL_CONNECTED && millis() - last_alert > 20000) {
+        bot.sendMessage(chat_id, "🔥 KEBAKARAN! Sensor Api mendeteksi nyala api!", "");
+        last_alert = millis();
+      }
+    }
   }
-}
+  // Prioritas 2: ASAP (Pelanggaran/Bahaya Ringan)
+  else if (mq2_val > 2500 || mq2_do == 0) {
+    safety_status = "SMOKE";
+    if (!is_playing && millis() - last_alert > 10000) {
+      // Alarm Asap (Nada Putus-putus)
+      ledcWriteTone(PWM_CHANNEL, 1000); delay(500); ledcWriteTone(PWM_CHANNEL, 0);
 
-void handleMusic() {
-  if (!is_playing) return;
-
-  unsigned long now = millis();
-  int note_duration = 1000 / pgm_read_dword(&current_tempo[note_index]);
-  int pause = note_duration * 1.30;
-
-  if (!note_state) {
-    int note = pgm_read_dword(&current_melody[note_index]);
-    ledcWriteTone(PWM_CHANNEL, note);
-    note_state = true;
-    last_note_start = now;
-  }
-
-  if (note_state && (now - last_note_start > note_duration)) {
-    ledcWriteTone(PWM_CHANNEL, 0);
-  }
-
-  if (now - last_note_start > pause) {
-    note_state = false;
-    note_index++;
-    if (note_index >= current_len) {
-      is_playing = false; // Stop at end
-      ledcWriteTone(PWM_CHANNEL, 0);
+      if (WiFi.status() == WL_CONNECTED && millis() - last_alert > 30000) {
+        bot.sendMessage(chat_id, "🚬 ASAP ROKOK TERDETEKSI! Level: " + String(mq2_val), "");
+        last_alert = millis();
+      }
     }
   }
 }
 
-void playSong(int id) {
-  if (id < 0 || id > 4) return;
-  current_melody = SONGS[id].m;
-  current_tempo = SONGS[id].t;
-  current_len = SONGS[id].len;
-  note_index = 0;
-  note_state = false;
-  is_playing = true;
-  last_note_start = millis();
+void handleJson() {
+  String json = "{";
+  json += "\"t\":" + String(t, 1) + ",";
+  json += "\"h\":" + String(h, 0) + ",";
+  json += "\"lux\":" + String(lux) + ",";
+  json += "\"db\":" + String(db, 1) + ",";
+  json += "\"mq2\":" + String(mq2_val) + ",";
+  json += "\"flame\":" + String(flame_val) + ",";
+  json += "\"status\":\"" + safety_status + "\",";
+  json += "\"time\":\"" + getFormattedTime() + "\"";
+  json += "}";
+  server.send(200, "application/json", json);
 }
 
 void handleCommand() {
-  String act = server.arg("do");
-  if (act == "fan_toggle") { mode_auto = false; st_fan = !st_fan; digitalWrite(PIN_FAN, st_fan); }
-  if (act == "lamp_toggle") { mode_auto = false; st_lamp = !st_lamp; digitalWrite(PIN_LAMP, st_lamp); }
-  if (act == "auto_toggle") { mode_auto = !mode_auto; }
-  if (act == "music_play") {
-    int id = server.arg("id").toInt();
-    playSong(id);
-  }
-  if (act == "music_stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); }
-  if (act == "tone") {
-    int f = server.arg("freq").toInt();
-    if(f>0) ledcWriteTone(PWM_CHANNEL, f); else ledcWriteTone(PWM_CHANNEL, 0);
-  }
-
   server.send(200, "text/plain", "OK");
 }
 
 void handleScan() {
   int n = WiFi.scanNetworks();
-  if (n == -2) { // WiFi scan already running
-    server.send(200, "application/json", "{\"status\":\"scanning\"}");
-    return;
-  }
-
   String json = "[";
-  for (int i = 0; i < n; ++i) {
-    if (i) json += ",";
+  for(int i=0; i<n; i++) {
+    if(i) json += ",";
     json += "\"" + WiFi.SSID(i) + "\"";
   }
   json += "]";
   server.send(200, "application/json", json);
 }
 
-void handleJson() {
-  String json = "{";
-  json += "\"t\":" + String(t) + ",";
-  json += "\"h\":" + String(h) + ",";
-  json += "\"gas\":" + String(gas) + ",";
-  json += "\"gas_dig\":" + String(gas_dig) + ",";
-  json += "\"mq2\":" + String(mq2_val) + ",";
-  json += "\"lux\":" + String(lux) + ",";
-  json += "\"ldr_dig\":" + String(ldr_dig) + ",";
-  json += "\"db\":" + String(db) + ",";
-  json += "\"fan\":" + String(st_fan) + ",";
-  json += "\"lamp\":" + String(st_lamp) + ",";
-  json += "\"auto\":" + String(mode_auto) + ",";
-  json += "\"time\":\"" + getFormattedTime() + "\"";
-  json += "}";
-  server.send(200, "application/json", json);
-}
-
 void handleDownload() {
-  String csv = "Waktu,Suhu,Lembab,Gas,MQ2,Suara\n";
-  csv += String(millis()) + "," + String(t) + "," + String(h) + "," + String(gas) + "," + String(mq2_val) + "," + String(db);
-  server.sendHeader("Content-Disposition", "attachment; filename=log.csv");
+  String csv = "Waktu,Suhu,Lembab,Lux,dB,MQ2,Flame,Status\n";
+  csv += String(millis()) + "," + String(t) + "," + String(h) + "," + String(lux) + "," + String(db) + "," + String(mq2_val) + "," + String(flame_val) + "," + safety_status + "\n";
+  server.sendHeader("Content-Disposition", "attachment; filename=data_monitor.csv");
   server.send(200, "text/csv", csv);
 }
 
@@ -501,10 +497,54 @@ void handleSaveSettings() {
   if (server.hasArg("ssid")) {
     pref.putString("ssid", server.arg("ssid"));
     pref.putString("pass", server.arg("pass"));
-    if(server.arg("bot").length()>5) pref.putString("bot", server.arg("bot"));
-    if(server.arg("id").length()>5) pref.putString("id", server.arg("id"));
-    server.send(200, "text/html", "Saved. Restarting...");
+    if(server.arg("bot").length() > 5) pref.putString("bot", server.arg("bot"));
+    if(server.arg("id").length() > 5) pref.putString("id", server.arg("id"));
+    server.send(200, "text/html", "Tersimpan. Restarting...");
     delay(1000); ESP.restart();
+  }
+}
+
+// Logic Musik Sederhana (Untuk Bel)
+void playBell() {
+  if (is_playing) return;
+  current_melody = song_bell_m;
+  current_tempo = song_bell_t;
+  current_len = 4;
+  note_index = 0;
+  is_playing = true;
+  last_note_start = millis();
+}
+
+void handleMusic() {
+  if (!is_playing) return;
+  unsigned long now = millis();
+  int note_dur = 1000 / current_tempo[note_index];
+
+  if (!note_state) {
+    ledcWriteTone(PWM_CHANNEL, current_melody[note_index]);
+    note_state = true;
+    last_note_start = now;
+  }
+
+  if (now - last_note_start > note_dur) {
+    ledcWriteTone(PWM_CHANNEL, 0);
+    note_state = false;
+    note_index++;
+    if (note_index >= current_len) is_playing = false;
+  }
+}
+
+void checkSchedule() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return;
+
+  if (timeinfo.tm_sec == 0) {
+    if ((timeinfo.tm_hour == 7 && timeinfo.tm_min == 0) ||
+        (timeinfo.tm_hour == 10 && timeinfo.tm_min == 0) ||
+        (timeinfo.tm_hour == 14 && timeinfo.tm_min == 0)) {
+      playBell();
+    }
   }
 }
 
@@ -513,29 +553,21 @@ void handleTelegram(int numNewMessages) {
     String chat_id_msg = bot.messages[i].chat_id;
     String text = bot.messages[i].text;
 
-    if (text == "/start") {
-      bot.sendMessage(chat_id_msg, "Halo! Cmd: /cek, /musik, /fan_on, /fan_off, /dashboard", "");
-    }
-    else if (text == "/cek") {
-      String msg = "🌡 T: " + String(t) + "C\n💧 H: " + String(h) + "%\n💨 Gas: " + String(gas) + "\n🚬 MQ2: " + String(mq2_val);
+    if (text == "/status") {
+      String msg = "📊 Status Kelas:\n";
+      msg += "🌡️ Suhu: " + String(t, 1) + "°C\n";
+      msg += "💡 Cahaya: " + String(lux) + " Lux\n";
+      msg += "🔊 Suara: " + String(db, 1) + " dB\n";
+      msg += "🔥 Status: " + safety_status;
       bot.sendMessage(chat_id_msg, msg, "");
     }
-    else if (text == "/musik") {
-      bot.sendMessage(chat_id_msg, "Playing Indonesia Raya...", "");
-      playSong(2);
-    }
-    else if (text == "/dashboard") {
-      bot.sendMessage(chat_id_msg, "Link: http://" + WiFi.localIP().toString(), "");
-    }
-    else if (text == "/fan_on") { mode_auto=false; st_fan=true; digitalWrite(PIN_FAN, HIGH); bot.sendMessage(chat_id_msg, "Fan ON", ""); }
-    else if (text == "/fan_off") { mode_auto=false; st_fan=false; digitalWrite(PIN_FAN, LOW); bot.sendMessage(chat_id_msg, "Fan OFF", ""); }
   }
 }
 
 String getFormattedTime() {
   struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)) return "No Time";
-  char timeStringBuff[10];
-  strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M", &timeinfo);
-  return String(timeStringBuff);
+  if(!getLocalTime(&timeinfo)) return "--:--";
+  char s[10];
+  strftime(s, 10, "%H:%M", &timeinfo);
+  return String(s);
 }
