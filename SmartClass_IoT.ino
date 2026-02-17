@@ -57,10 +57,10 @@ WiFiClientSecure client;
 UniversalTelegramBot bot("", client);
 Preferences pref;
 
-String ssid_name = "YOUR_SSID";
-String ssid_pass = "YOUR_PASS";
-String bot_token = "YOUR_BOT_TOKEN";
-String chat_id   = "YOUR_CHAT_ID";
+String ssid_name = "ELSON";
+String ssid_pass = "elso250129";
+String bot_token = "8324067380:AAHfMtWfLdtoYByjnrm2sgy90z3y01V6C-I";
+String chat_id   = "6383896382";
 
 // Sensor Data
 float t = 0, h = 0, lux = 0, dist = 0, db = 0;
@@ -369,16 +369,42 @@ void handleTelegram(int n) {
   for (int i=0; i<n; i++) {
     String txt = bot.messages[i].text;
     String cid = bot.messages[i].chat_id;
+    String from_name = bot.messages[i].from_name;
+
+    // Auto-Add Chat ID if not default (Simple Multi-User)
+    if (cid != chat_id && cid != pref.getString("id")) {
+       // Optional: You could save this new ID to pref or just reply
+    }
 
     if (txt == "/start") {
       String msg = "🤖 *Smart Class Ultimate*\n";
-      msg += "/status - Cek Kesehatan\n";
+      msg += "Halo " + from_name + "!\n\n";
+      msg += "📱 *Menu Perintah:*\n";
+      msg += "/info - Info Sistem & IP\n";
+      msg += "/dashboard - Link Web Dashboard\n";
+      msg += "/status - Cek Sensor & Kesehatan\n";
+      msg += "/download - Link Download Data\n";
+      msg += "/musik - Daftar Lagu\n";
       msg += "/ai [on/off] - Mode Otomatis\n";
-      msg += "/music [0-37] - Putar Lagu\n";
-      msg += "/stop - Matikan Suara";
+      msg += "/stop - Matikan Suara\n\n";
+      msg += "Admin ID: " + chat_id;
       bot.sendMessage(cid, msg, "Markdown");
     }
-    else if (txt == "/status") {
+    else if (txt == "/info") {
+      String msg = "ℹ️ *System Info*\n";
+      msg += "📶 WiFi: " + String(WiFi.SSID()) + " (" + String(WiFi.RSSI()) + "dBm)\n";
+      msg += "🌐 IP: " + WiFi.localIP().toString() + "\n";
+      msg += "⏱️ Waktu: " + time_str + "\n";
+      msg += "🤖 AI Mode: " + String(mode_ai ? "ON" : "OFF");
+      bot.sendMessage(cid, msg, "Markdown");
+    }
+    else if (txt == "/dashboard") {
+      String msg = "🌐 *Akses Dashboard*\n";
+      msg += "Buka di browser (jika satu WiFi):\n";
+      msg += "http://" + WiFi.localIP().toString();
+      bot.sendMessage(cid, msg, "");
+    }
+    else if (txt == "/status" || txt == "/sensor") {
       String msg = "🏥 *Laporan Kesehatan*\n";
       msg += "🌡 " + String(t) + "C (Std: 18-30)\n";
       msg += "💧 " + String(h) + "% (Std: 40-60)\n";
@@ -388,13 +414,36 @@ void handleTelegram(int n) {
       msg += "📊 Status: " + health_status;
       bot.sendMessage(cid, msg, "");
     }
+    else if (txt == "/download") {
+      String msg = "📂 *Download Data*\n";
+      msg += "Klik link ini untuk download CSV:\n";
+      msg += "http://" + WiFi.localIP().toString() + "/csv";
+      bot.sendMessage(cid, msg, "");
+    }
+    else if (txt == "/musik") {
+      String msg = "🎵 *Daftar Lagu (Top 5)*\n";
+      msg += "Ketik /music [nomor]\n\n";
+      msg += "26-28: Bel Sekolah\n";
+      msg += "29: Indonesia Raya\n";
+      msg += "32: Butterfly\n";
+      msg += "33: Mario Long\n";
+      msg += "37: Nyan Cat";
+      bot.sendMessage(cid, msg, "");
+    }
     else if (txt == "/ai on") { mode_ai=true; bot.sendMessage(cid, "AI ON", ""); }
     else if (txt == "/ai off") { mode_ai=false; bot.sendMessage(cid, "AI OFF", ""); }
     else if (txt.startsWith("/music ")) {
       playSong(txt.substring(7).toInt());
-      bot.sendMessage(cid, "Playing...", "");
+      bot.sendMessage(cid, "Playing Song #" + txt.substring(7), "");
     }
     else if (txt == "/stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); bot.sendMessage(cid, "Stopped", ""); }
+    else if (txt.startsWith("/set_id")) {
+       // Secret command to change admin ID via chat
+       // String new_id = txt.substring(8);
+       // chat_id = new_id;
+       // pref.putString("id", new_id);
+       // bot.sendMessage(cid, "Admin ID Updated!", "");
+    }
   }
 }
 
