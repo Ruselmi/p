@@ -297,7 +297,7 @@ void checkBellSchedule() {
 
 // ================= MUSIC ENGINE =================
 void playSong(int id) {
-  if (id < 0 || id > 37) return; // Limit 37
+  if (id < 0 || id >= 37) return; // Max Index 36 (Size 37)
   current_song_id = id;
   is_playing = true;
   note_index = 0;
