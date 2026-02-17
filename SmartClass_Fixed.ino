@@ -65,7 +65,7 @@ bool st_fan = false, st_lamp = false, mode_auto = true;
 bool ai_mode = false;
 String mood = "Netral";
 String health_stat = "OK";
-unsigned long last_sensor = 0, last_bot = 0, last_bell_check = 0, last_alert = 0;
+unsigned long last_sensor = 0, last_bot = 0, last_bell_check = 0, last_alert = 0, last_wifi_check = 0;
 
 // Music
 bool is_playing = false;
@@ -308,7 +308,13 @@ void loop() {
     checkSchedule();
   }
 
-  // 3. Telegram (Every 3s, Pause if music playing)
+  // 3. WiFi Auto Reconnect (Every 10s if disconnected)
+  if (WiFi.status() != WL_CONNECTED && (now - last_wifi_check > 10000)) {
+    last_wifi_check = now;
+    WiFi.reconnect();
+  }
+
+  // 4. Telegram (Every 3s, Pause if music playing)
   if (WiFi.status() == WL_CONNECTED && now - last_bot > 3000 && !is_playing) {
     last_bot = now;
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
@@ -337,9 +343,6 @@ void readSensors() {
   int raw_sound = analogRead(PIN_SOUND);
   db = (raw_sound / 4095.0) * 100.0; // Calibration rough
 
-  // Debug Serial
-  if(mq2_val > 2000) Serial.println("AI:ROKOK TERDETEKSI! 🚭 T:" + String(t));
-
   // Safety Logic (Gas/Smoke)
   // FIX: Sensor Analog Mentok -> Kita hanya percaya Digital Output (DO) untuk Alert
   bool warmup_done = (millis() > 60000);
@@ -348,16 +351,19 @@ void readSensors() {
   // Analog hanya untuk display, tidak trigger alert karena sering mentok (4095)
   bool gas_alert = (gas_dig == LOW);
 
-  // MQ2 Analog Threshold
-  bool smoke_alert = (mq2_val > 3500); // Threshold tinggi 3500
+  // MQ2 Analog Threshold (Tuning: 3500 is high, preventing false pos)
+  bool smoke_alert = (mq2_val > 3500);
   unsigned long now = millis();
+
+  // Debug Serial (Sync with Alert Threshold)
+  if(smoke_alert && warmup_done) Serial.println("AI:ROKOK TERDETEKSI! 🚭 Val:" + String(mq2_val));
 
   if ((gas_alert || smoke_alert) && warmup_done) {
     if (WiFi.status() == WL_CONNECTED && (now - last_alert > 30000)) {
         last_alert = now;
         String alert = "⚠️ BAHAYA: ";
         if (gas_alert) alert += "Gas Bocor/Udara Buruk! (Digital Trigger) ";
-        if (smoke_alert) alert += "Asap Rokok Terdeteksi! ";
+        if (smoke_alert) alert += "Asap Rokok Terdeteksi! (" + String(mq2_val) + ") ";
         bot.sendMessage(chat_id, alert, "");
     }
     ledcWriteTone(PWM_CHANNEL, 1000); // Alarm
