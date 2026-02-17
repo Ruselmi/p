@@ -401,6 +401,15 @@ const int song25_tempo[] PROGMEM = {
   8, 8, 8, 16, 16, 8, 8, 8, 8, 8, 8, 2
 };
 
+// 26. SCHOOL BELLS (SIMPLE)
+const int bell1_melody[] PROGMEM = { NOTE_C5, NOTE_E5, NOTE_G5, NOTE_C6 }; // Entry
+const int bell1_tempo[] PROGMEM = { 4, 4, 4, 2 };
+const int bell2_melody[] PROGMEM = { NOTE_G5, NOTE_E5, NOTE_C5 }; // Break
+const int bell2_tempo[] PROGMEM = { 4, 4, 2 };
+const int bell3_melody[] PROGMEM = { NOTE_C6, NOTE_G5, NOTE_E5, NOTE_C5 }; // End
+const int bell3_tempo[] PROGMEM = { 4, 4, 4, 2 };
+
+
 // ================= SONGS TABLE =================
 
 struct Song {
@@ -435,7 +444,12 @@ const Song SONGS[] = {
   {"Gravity Falls", song22_melody, song22_tempo, sizeof(song22_melody)/sizeof(int)},
   {"Sherlock", song23_melody, song23_tempo, sizeof(song23_melody)/sizeof(int)},
   {"Coffin Dance", song24_melody, song24_tempo, sizeof(song24_melody)/sizeof(int)},
-  {"Rick Roll", song25_melody, song25_tempo, sizeof(song25_melody)/sizeof(int)}
+  {"Rick Roll", song25_melody, song25_tempo, sizeof(song25_melody)/sizeof(int)},
+
+  // BELLS (25, 26, 27)
+  {"🔔 School: Entry", bell1_melody, bell1_tempo, sizeof(bell1_melody)/sizeof(int)},
+  {"🔔 School: Break", bell2_melody, bell2_tempo, sizeof(bell2_melody)/sizeof(int)},
+  {"🔔 School: End", bell3_melody, bell3_tempo, sizeof(bell3_melody)/sizeof(int)}
 };
 
 #endif

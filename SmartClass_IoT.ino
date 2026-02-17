@@ -1,12 +1,11 @@
 /*
- * SMART CLASS IOT - AI EDITION (Multi File)
+ * SMART CLASS IOT - HEALTH & SAFETY EDITION (Multi File)
  * Board: ESP32 Dev Module
  * Fitur:
- * - Monitoring Sensor (Suhu, Lembab, Gas, Suara, Cahaya, Jarak)
- * - Telegram Bot (Full Control)
- * - Web Dashboard (Piano, Music Player 25 Songs, AI Mode)
- * - AI Logic (Presence Detection, Security, Comfort)
- * - Music Engine (Pro Melodies from PROGMEM)
+ * - Monitoring: Suhu, Lembab, Gas (MQ135), Asap/Rokok (MQ2), Suara, Cahaya, Jarak
+ * - Health Standards: WHO & Kemenkes Compliance Check
+ * - School Bell: Auto-Schedule (Entry, Break, End)
+ * - Telegram Bot, Web Dashboard, Music Player, AI Logic
  */
 
 #include <WiFi.h>
@@ -18,8 +17,8 @@
 #include <Preferences.h>
 #include <time.h>
 
-#include "index.h"  // Web Dashboard
-#include "songs.h"  // 25 Melodies Database
+#include "index.h"  // Web Dashboard (Updated with Health Refs)
+#include "songs.h"  // 25 Melodies + School Bells
 
 // ================= PIN CONFIGURATION =================
 #define PIN_DHT         18
@@ -27,7 +26,8 @@
 #define PIN_FAN         4
 #define PIN_LAMP        2
 #define PIN_LDR         34
-#define PIN_MQ135       35
+#define PIN_MQ135       35  // Air Quality
+#define PIN_MQ2         33  // Smoke / Cigarette (NEW)
 #define PIN_SOUND       32
 #define PIN_TRIG        5
 #define PIN_ECHO        19
@@ -38,9 +38,15 @@
 #define PWM_FREQ        2000
 #define DHTTYPE         DHT22
 
-// ================= SETTINGS =================
-const int GAS_ALARM_LIMIT   = 2500;
-const float TEMP_ALARM_LIMIT = 35.0;
+// ================= HEALTH STANDARDS (KEMENKES/WHO) =================
+// Permenkes No. 2 Tahun 2023 & Kepmen LH No. 48/1996
+const float TEMP_MIN_STD = 18.0;
+const float TEMP_MAX_STD = 30.0;
+const float HUMID_MIN_STD = 40.0;
+const float HUMID_MAX_STD = 60.0;
+const float NOISE_MAX_STD = 55.0; // dB for Schools
+const int   CO2_MAX_STD   = 1000; // PPM (Good Ventilation)
+
 const long GMT_OFFSET_SEC   = 25200; // UTC+7
 const int DAYLIGHT_OFFSET   = 0;
 
@@ -58,19 +64,26 @@ String chat_id   = "YOUR_CHAT_ID";
 
 // Sensor Data
 float t = 0, h = 0, lux = 0, dist = 0, db = 0;
-int gas = 0;
+int gas_mq135 = 0; // CO2 / Air Quality
+int gas_mq2 = 0;   // Smoke / LPG
 long rssi = 0;
 
 // System State
 bool st_fan = false, st_lamp = false;
-bool mode_auto = false; // Manual by default
-bool mode_ai = true;    // AI Mode ON by default
+bool mode_auto = false;
+bool mode_ai = true;
+bool auto_bell = true;  // School Bell Schedule
+
 String mood = "Netral";
 String ai_status = "Initializing...";
+String health_status = "Checking...";
 String time_str = "--:--";
+int current_hour = 0;
+int current_minute = 0;
 bool is_day_time = true;
 bool alert_active = false;
 bool presence_detected = false;
+bool smoke_detected = false;
 
 // Timers
 unsigned long last_dht = 0;
@@ -78,6 +91,7 @@ unsigned long last_analog = 0;
 unsigned long last_bot = 0;
 unsigned long last_wifi_check = 0;
 unsigned long scan_start_time = 0;
+unsigned long last_bell_check = 0;
 
 // Music Engine
 bool is_playing = false;
@@ -91,6 +105,7 @@ void handleSaveSettings();
 void readDHT();
 void readAnalogSensors();
 void logicAI();
+void checkBellSchedule();
 void handleJson();
 void handleCommand();
 void handleDownload();
@@ -102,6 +117,7 @@ void updateTime();
 void handleScanWiFi();
 void handleRoot();
 void playTone(int freq, int duration);
+void playSong(int id);
 
 // ================= SETUP =================
 void setup() {
@@ -113,6 +129,7 @@ void setup() {
   pinMode(PIN_ECHO, INPUT);
 
   pinMode(PIN_MQ135, INPUT);
+  pinMode(PIN_MQ2, INPUT);
   analogSetAttenuation(ADC_11db); // 0-3.3V range
 
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
@@ -159,10 +176,7 @@ void setup() {
   server.enableCORS(true);
   server.begin();
 
-  // Startup Sound (Mario Intro - Short)
-  current_song_id = 0; // Mario
-  is_playing = true;
-  last_note_start = millis();
+  playSong(0); // Startup Sound (Mario)
 }
 
 // ================= LOOP =================
@@ -184,6 +198,7 @@ void loop() {
     last_analog = now;
     readAnalogSensors();
     updateTime();
+    checkBellSchedule();
     logicAI();
     Serial.print("AI:"); Serial.print(ai_status); Serial.print(" T:"); Serial.println(t);
   }
@@ -199,29 +214,42 @@ void loop() {
   }
 }
 
-// ================= LOGIC AI =================
+// ================= LOGIC AI & HEALTH =================
 void logicAI() {
-  // 1. Presence Detection (Ultrasonic < 150cm OR Sound > 60dB)
-  if ((dist > 0 && dist < 150) || (db > 60)) {
-    presence_detected = true;
+  // 1. Presence Detection
+  presence_detected = ((dist > 0 && dist < 150) || (db > 60));
+
+  // 2. Health & Comfort Status (Based on Standards)
+  String health = "OK ✅";
+  if (t < TEMP_MIN_STD || t > TEMP_MAX_STD) health = "Suhu Tidak Ideal ⚠️";
+  if (h < HUMID_MIN_STD || h > HUMID_MAX_STD) health = "Lembab Tidak Ideal ⚠️";
+  if (db > NOISE_MAX_STD) health = "Bising! 🔇";
+  if (gas_mq135 > CO2_MAX_STD) health = "Udara Kotor! 💨";
+  health_status = health;
+
+  // 3. Smoke Detection (MQ2)
+  if (gas_mq2 > 2000) { // Threshold for smoke
+    smoke_detected = true;
+    ai_status = "ROKOK TERDETEKSI! 🚭";
+    bot.sendMessage(chat_id, "🚭 PERINGATAN: Asap Rokok Terdeteksi di Kelas!", "");
   } else {
-    presence_detected = false;
+    smoke_detected = false;
   }
 
-  // 2. Determine Mood
-  int s = 0;
-  if (t > 28) s += 30; if (db > 60) s += 30; if (gas > 2000) s += 30;
-  if (s < 30) mood = "Nyaman 😊"; else if (s < 60) mood = "Fokus 😐"; else mood = "Buruk 😡";
+  // 4. Mood Calculation
+  int stress = 0;
+  if (t > 28) stress += 30; if (db > 60) stress += 30; if (gas_mq135 > 1500) stress += 30;
+  if (stress < 30) mood = "Nyaman 😊"; else if (stress < 60) mood = "Fokus 😐"; else mood = "Buruk 😡";
 
   if (!mode_ai) {
-    ai_status = "AI OFF (Manual)";
+    if (!smoke_detected) ai_status = "AI OFF (Manual)";
     return;
   }
 
-  // 3. AI Actions
+  // 5. AI Actions
   if (presence_detected) {
     if (is_day_time) {
-      ai_status = "Class Active 🟢";
+      if (!smoke_detected) ai_status = "Class Active 🟢";
       // Comfort Control
       if (t > 28.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
       else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
@@ -229,38 +257,58 @@ void logicAI() {
       if (lux < 400) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
       else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
     } else {
-      // Night Time + Presence = INTRUDER
+      // Night Intruder
       ai_status = "INTRUDER ALERT! 🔴";
-      st_lamp = true; digitalWrite(PIN_LAMP, HIGH); // Flash Lamp
-      st_fan = true; digitalWrite(PIN_FAN, HIGH);   // Noise
-
+      st_lamp = true; digitalWrite(PIN_LAMP, HIGH);
+      st_fan = true; digitalWrite(PIN_FAN, HIGH);
       if (!alert_active) {
-        bot.sendMessage(chat_id, "⚠️ PERINGATAN! Gerakan terdeteksi di kelas saat malam hari!", "");
+        bot.sendMessage(chat_id, "⚠️ PERINGATAN! Gerakan malam hari!", "");
         alert_active = true;
       }
     }
   } else {
-    ai_status = "Class Empty ⚪";
-    // Energy Saving
+    if (!smoke_detected) ai_status = "Class Empty ⚪";
     st_fan = false; digitalWrite(PIN_FAN, LOW);
     st_lamp = false; digitalWrite(PIN_LAMP, LOW);
     alert_active = false;
   }
+}
 
-  // Safety Override (Always Active)
-  if (gas > GAS_ALARM_LIMIT || t > TEMP_ALARM_LIMIT) {
-     ai_status = "DANGER 🔥";
-     bot.sendMessage(chat_id, "⚠️ BAHAYA! Gas/Suhu Tinggi!", "");
+// ================= SCHOOL BELL SCHEDULE =================
+void checkBellSchedule() {
+  if (!auto_bell) return;
+  if (millis() - last_bell_check < 60000) return; // Check every minute
+  last_bell_check = millis();
+
+  // Schedule (Mon-Fri assumed)
+  if (current_hour == 7 && current_minute == 0) {
+    playSong(25); // Entry Bell
+    bot.sendMessage(chat_id, "🔔 Bel Masuk (07:00)", "");
+  }
+  else if (current_hour == 10 && current_minute == 0) {
+    playSong(26); // Break Bell
+    bot.sendMessage(chat_id, "🔔 Bel Istirahat (10:00)", "");
+  }
+  else if (current_hour == 14 && current_minute == 0) {
+    playSong(27); // End Bell
+    bot.sendMessage(chat_id, "🔔 Bel Pulang (14:00)", "");
   }
 }
 
 // ================= MUSIC ENGINE =================
+void playSong(int id) {
+  if (id < 0 || id > 27) return;
+  current_song_id = id;
+  is_playing = true;
+  note_index = 0;
+  note_state = false;
+  last_note_start = millis();
+}
+
 void handleMusic() {
   if (!is_playing) return;
-
   unsigned long now = millis();
 
-  // Get current note data from PROGMEM
   int note_freq = pgm_read_word(&(SONGS[current_song_id].melody[note_index]));
   int note_tempo = pgm_read_word(&(SONGS[current_song_id].tempo[note_index]));
 
@@ -268,32 +316,26 @@ void handleMusic() {
   int pause = duration * 1.30;
 
   if (!note_state) {
-    // Start Note
     if (note_freq > 0) ledcWriteTone(PWM_CHANNEL, note_freq);
-    else ledcWriteTone(PWM_CHANNEL, 0); // Rest
-
+    else ledcWriteTone(PWM_CHANNEL, 0);
     note_state = true;
     last_note_start = now;
   } else {
-    // Stop tone after duration
-    if (now - last_note_start > duration) {
-      ledcWriteTone(PWM_CHANNEL, 0);
-    }
-    // Next note after pause
+    if (now - last_note_start > duration) ledcWriteTone(PWM_CHANNEL, 0);
     if (now - last_note_start > pause) {
       note_state = false;
       note_index++;
       int song_len = SONGS[current_song_id].length;
       if (note_index >= song_len) {
         note_index = 0;
-        // is_playing = false; // Loop song
+        is_playing = false; // Stop after one loop for bells/songs
       }
     }
   }
 }
 
 void playTone(int freq, int duration) {
-  is_playing = false; // Stop background music
+  is_playing = false;
   ledcWriteTone(PWM_CHANNEL, freq);
   delay(duration);
   ledcWriteTone(PWM_CHANNEL, 0);
@@ -307,26 +349,17 @@ void handleCommand() {
   if (act == "fan_toggle") { mode_ai = false; st_fan = !st_fan; digitalWrite(PIN_FAN, st_fan); }
   if (act == "lamp_toggle") { mode_ai = false; st_lamp = !st_lamp; digitalWrite(PIN_LAMP, st_lamp); }
   if (act == "ai_toggle") { mode_ai = !mode_ai; }
+  if (act == "bell_toggle") { auto_bell = !auto_bell; }
 
   if (act == "music_play") {
-    if (server.hasArg("id")) current_song_id = server.arg("id").toInt();
-    if (current_song_id < 0) current_song_id = 0;
-    if (current_song_id > 24) current_song_id = 24;
-
-    is_playing = true;
-    note_index = 0;
-    note_state = false;
-    last_note_start = millis();
+    if (server.hasArg("id")) playSong(server.arg("id").toInt());
   }
 
-  if (act == "music_stop") {
-    is_playing = false;
-    ledcWriteTone(PWM_CHANNEL, 0);
-  }
+  if (act == "music_stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); }
 
   if (act == "tone") {
     int f = server.arg("freq").toInt();
-    playTone(f, 200); // 200ms duration for piano key
+    playTone(f, 200);
   }
 
   server.send(200, "text/plain", "OK");
@@ -338,46 +371,39 @@ void handleTelegram(int n) {
     String cid = bot.messages[i].chat_id;
 
     if (txt == "/start") {
-      String msg = "🤖 *Smart Class AI Bot*\n\n";
-      msg += "/status - Cek kondisi kelas\n";
+      String msg = "🤖 *Smart Class Bot*\n";
+      msg += "/status - Cek Kesehatan Kelas\n";
       msg += "/ai [on/off] - Mode Otomatis\n";
-      msg += "/fan [on/off] - Kipas Manual\n";
-      msg += "/lamp [on/off] - Lampu Manual\n";
-      msg += "/music [0-24] - Putar Lagu\n";
-      msg += "/stop - Matikan Musik";
+      msg += "/music [0-27] - Putar Lagu/Bel\n";
+      msg += "/stop - Matikan Suara";
       bot.sendMessage(cid, msg, "Markdown");
     }
-    else if (txt == "/status" || txt == "/cek") {
-      String msg = "📊 *Status Kelas*\n";
-      msg += "🌡 Suhu: " + String(t) + "C\n";
-      msg += "💧 Lembab: " + String(h) + "%\n";
-      msg += "💨 Gas: " + String(gas) + "\n";
-      msg += "🔊 Suara: " + String(db) + "dB\n";
-      msg += "👥 Orang: " + String(presence_detected ? "ADA" : "KOSONG") + "\n";
-      msg += "🤖 AI Status: " + ai_status;
-      bot.sendMessage(cid, msg, "Markdown");
+    else if (txt == "/status") {
+      String msg = "🏥 *Laporan Kesehatan*\n";
+      msg += "🌡 " + String(t) + "C (Std: 18-30)\n";
+      msg += "💧 " + String(h) + "% (Std: 40-60)\n";
+      msg += "🔊 " + String(db) + "dB (Max: 55)\n";
+      msg += "💨 AQI: " + String(gas_mq135) + " (Max: 1000)\n";
+      msg += "🚭 Asap: " + String(smoke_detected ? "BAHAYA" : "AMAN") + "\n";
+      msg += "📊 Status: " + health_status;
+      bot.sendMessage(cid, msg, "");
     }
-    else if (txt == "/ai on") { mode_ai=true; bot.sendMessage(cid, "AI Mode ON", ""); }
-    else if (txt == "/ai off") { mode_ai=false; bot.sendMessage(cid, "AI Mode OFF", ""); }
-    else if (txt == "/fan on") { mode_ai=false; digitalWrite(PIN_FAN,1); bot.sendMessage(cid, "Fan ON", ""); }
-    else if (txt == "/fan off") { mode_ai=false; digitalWrite(PIN_FAN,0); bot.sendMessage(cid, "Fan OFF", ""); }
-    else if (txt == "/lamp on") { mode_ai=false; digitalWrite(PIN_LAMP,1); bot.sendMessage(cid, "Lamp ON", ""); }
-    else if (txt == "/lamp off") { mode_ai=false; digitalWrite(PIN_LAMP,0); bot.sendMessage(cid, "Lamp OFF", ""); }
+    else if (txt == "/ai on") { mode_ai=true; bot.sendMessage(cid, "AI ON", ""); }
+    else if (txt == "/ai off") { mode_ai=false; bot.sendMessage(cid, "AI OFF", ""); }
     else if (txt.startsWith("/music ")) {
-      String id_str = txt.substring(7);
-      current_song_id = id_str.toInt();
-      is_playing = true; note_index = 0; note_state = false; last_note_start = millis();
-      bot.sendMessage(cid, "Playing Song #" + id_str, "");
+      playSong(txt.substring(7).toInt());
+      bot.sendMessage(cid, "Playing...", "");
     }
-    else if (txt == "/stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); bot.sendMessage(cid, "Music Stopped", ""); }
+    else if (txt == "/stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); bot.sendMessage(cid, "Stopped", ""); }
   }
 }
 
 void handleJson() {
   JsonDocument doc;
-  doc["t"] = t; doc["h"] = h; doc["gas"] = gas; doc["db"] = db;
+  doc["t"] = t; doc["h"] = h; doc["gas"] = gas_mq135; doc["mq2"] = gas_mq2; doc["db"] = db;
   doc["rssi"] = rssi; doc["fan"] = st_fan; doc["lamp"] = st_lamp;
-  doc["ai"] = mode_ai; doc["mood"] = mood; doc["time"] = time_str; doc["ai_stat"] = ai_status;
+  doc["ai"] = mode_ai; doc["bell"] = auto_bell; doc["mood"] = mood;
+  doc["time"] = time_str; doc["ai_stat"] = ai_status; doc["health"] = health_status;
   String json; serializeJson(doc, json);
   server.sendHeader("Cache-Control", "no-cache, no-store");
   server.send(200, "application/json", json);
@@ -393,7 +419,8 @@ void readDHT() {
 }
 
 void readAnalogSensors() {
-  gas = smoothAnalog(PIN_MQ135);
+  gas_mq135 = smoothAnalog(PIN_MQ135);
+  gas_mq2   = smoothAnalog(PIN_MQ2);
   lux = smoothAnalog(PIN_LDR);
 
   digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2);
@@ -417,7 +444,9 @@ void updateTime() {
   if(!getLocalTime(&timeinfo)){ time_str = "--:--"; return; }
   char b[10]; strftime(b, sizeof(b), "%H:%M", &timeinfo);
   time_str = String(b);
-  is_day_time = (timeinfo.tm_hour >= 7 && timeinfo.tm_hour < 17);
+  current_hour = timeinfo.tm_hour;
+  current_minute = timeinfo.tm_min;
+  is_day_time = (current_hour >= 7 && current_hour < 17);
 }
 
 void handleScanWiFi() {
@@ -452,7 +481,7 @@ void checkWiFi() {
 }
 
 void handleDownload() {
-  String csv = "Time,T,H,Gas,DB\n" + String(millis()) + "," + String(t) + "," + String(h) + "," + String(gas) + "," + String(db);
+  String csv = "Time,T,H,Gas,Smoke,DB\n" + String(millis()) + "," + String(t) + "," + String(h) + "," + String(gas_mq135) + "," + String(gas_mq2) + "," + String(db);
   server.sendHeader("Content-Disposition", "attachment; filename=log.csv");
   server.send(200, "text/csv", csv);
 }

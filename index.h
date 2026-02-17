@@ -6,7 +6,7 @@ const char HTML_HEAD[] PROGMEM = R"=====(
 <html lang="id">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Smart Class AI</title>
+  <title>Smart Class Health</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --primary: #6366f1; --text: #f1f5f9; --ok: #10b981; --warn: #f59e0b; --danger: #ef4444; }
@@ -21,6 +21,8 @@ const char HTML_HEAD[] PROGMEM = R"=====(
     .card h3 { margin: 0 0 5px 0; font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
     .val { font-size: 1.5rem; font-weight: 800; }
     .unit { font-size: 0.8rem; color: #64748b; font-weight: 400; }
+    .ref { font-size: 0.7rem; color: #94a3b8; margin-top:5px; display:block; text-decoration: none; border-top: 1px solid #334155; padding-top: 5px; }
+    .ref:hover { text-decoration: underline; color: var(--primary); }
 
     .controls { margin-top: 20px; display: grid; gap: 10px; }
     .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -41,9 +43,6 @@ const char HTML_HEAD[] PROGMEM = R"=====(
     .form-card { text-align: left !important; grid-column: span 2; }
     #wifi-list { max-height: 150px; overflow-y: auto; background: #334155; padding: 10px; border-radius: 8px; display: none; margin-bottom: 10px; }
     .wifi-item { padding: 5px; cursor: pointer; border-bottom: 1px solid #475569; }
-
-    .tab-btn { background: transparent; border-bottom: 2px solid transparent; border-radius: 0; color: #94a3b8; }
-    .tab-btn.active { border-bottom: 2px solid var(--primary); color: var(--primary); }
   </style>
 </head>
 <body>
@@ -52,29 +51,55 @@ const char HTML_HEAD[] PROGMEM = R"=====(
 const char HTML_BODY[] PROGMEM = R"=====(
   <div class="container">
     <header>
-      <h1>Smart Class AI</h1>
+      <h1>Smart Class AI Health</h1>
       <div style="font-size:0.8rem; color:#94a3b8; margin-top:5px;">
         <span class="status-dot"></span><span id="ip">...</span> | <span id="time">--:--</span>
       </div>
     </header>
 
     <div class="grid">
-      <div class="card"><h3>Suhu</h3><div class="val" id="t">--</div><span class="unit">°C</span></div>
-      <div class="card"><h3>Lembab</h3><div class="val" id="h">--</div><span class="unit">%</span></div>
-      <div class="card"><h3>Gas</h3><div class="val" id="gas">--</div><span class="unit">PPM</span></div>
-      <div class="card"><h3>Suara</h3><div class="val" id="db">--</div><span class="unit">dB</span></div>
+      <!-- SENSORS WITH HEALTH STANDARDS -->
+      <div class="card">
+        <h3>Suhu (KEMENKES)</h3>
+        <div class="val" id="t">--</div><span class="unit">°C</span>
+        <a href="https://peraturan.bpk.go.id/Details/258908/permenkes-no-2-tahun-2023" target="_blank" class="ref">Std: 18-30°C<br>(PMK No.2/2023)</a>
+      </div>
+      <div class="card">
+        <h3>Lembab (KEMENKES)</h3>
+        <div class="val" id="h">--</div><span class="unit">%</span>
+        <a href="https://peraturan.bpk.go.id/Details/258908/permenkes-no-2-tahun-2023" target="_blank" class="ref">Std: 40-60%<br>(PMK No.2/2023)</a>
+      </div>
+      <div class="card">
+        <h3>Kebisingan (KEPMEN LH)</h3>
+        <div class="val" id="db">--</div><span class="unit">dB</span>
+        <a href="https://peraturan.go.id/id/kepmen-lh-no-48-tahun-1996" target="_blank" class="ref">Max: 55 dB<br>(KepmenLH 48/1996)</a>
+      </div>
+      <div class="card">
+        <h3>Kualitas Udara</h3>
+        <div class="val" id="gas">--</div><span class="unit">PPM</span>
+        <span class="ref">Std: < 1000 PPM<br>(Ventilasi Sehat)</span>
+      </div>
+
+      <!-- NEW SENSOR: SMOKE -->
+      <div class="card" style="grid-column: span 2; border-color: var(--danger);">
+        <h3>🚭 Detektor Rokok (MQ-2)</h3>
+        <div class="val" id="mq2" style="color:#f59e0b;">--</div>
+        <div id="smoke_status" style="font-size:0.9rem; font-weight:bold; margin-top:5px;">Scanning...</div>
+      </div>
+
       <div class="card" style="grid-column: span 2;">
-        <h3>Status Kelas</h3>
-        <div class="val" id="mood" style="color: var(--primary); font-size:1.2rem;">Loading...</div>
-        <div style="font-size:0.8rem; margin-top:5px;" id="ai_status">AI: Detecting...</div>
+        <h3>AI Health Status</h3>
+        <div class="val" id="health" style="color: var(--ok); font-size:1.2rem;">Checking...</div>
+        <div style="font-size:0.8rem; margin-top:5px;" id="ai_status">AI System Active</div>
       </div>
     </div>
 
     <div class="controls">
-      <!-- AI TOGGLE -->
-      <button onclick="cmd('ai_toggle')" style="background:#334155; width:100%;">
-        🤖 AI SYSTEM: <span id="s_ai" style="color:#10b981;">ON</span>
-      </button>
+      <!-- SCHOOL BELL & AI -->
+      <div class="btn-group">
+        <button onclick="cmd('ai_toggle')" style="background:#334155;">🤖 AI: <span id="s_ai">ON</span></button>
+        <button onclick="cmd('bell_toggle')" style="background:#334155;">🔔 BEL: <span id="s_bell">ON</span></button>
+      </div>
 
       <!-- MANUAL CONTROLS -->
       <div class="btn-group">
@@ -84,33 +109,21 @@ const char HTML_BODY[] PROGMEM = R"=====(
 
       <!-- MUSIC PLAYER -->
       <div class="card" style="text-align:left;">
-        <h3>🎵 Music Player (25 Songs)</h3>
+        <h3>🎵 Music & Bells</h3>
         <select id="song_select">
-          <option value="0">1. Super Mario Bros</option>
-          <option value="1">2. Zelda: Song of Storms</option>
-          <option value="2">3. Star Wars: Imperial</option>
-          <option value="3">4. Happy Birthday</option>
-          <option value="4">5. Tetris Theme</option>
-          <option value="5">6. Harry Potter</option>
-          <option value="6">7. Pink Panther</option>
-          <option value="7">8. Nokia Ringtone</option>
-          <option value="8">9. Twinkle Little Star</option>
-          <option value="9">10. Jingle Bells</option>
-          <option value="10">11. Silent Night</option>
-          <option value="11">12. Take On Me</option>
-          <option value="12">13. Cantina Band</option>
-          <option value="13">14. Sweet Child O Mine</option>
-          <option value="14">15. Fur Elise</option>
-          <option value="15">16. Ode to Joy</option>
-          <option value="16">17. Pirates Caribbean</option>
-          <option value="17">18. Mission Impossible</option>
-          <option value="18">19. Indiana Jones</option>
-          <option value="19">20. James Bond</option>
-          <option value="20">21. Pokemon Theme</option>
-          <option value="21">22. Gravity Falls</option>
-          <option value="22">23. Sherlock Theme</option>
-          <option value="23">24. Coffin Dance</option>
-          <option value="24">25. Rick Roll</option>
+          <optgroup label="🔔 Bel Sekolah">
+            <option value="25">Bel Masuk (07:00)</option>
+            <option value="26">Bel Istirahat (10:00)</option>
+            <option value="27">Bel Pulang (14:00)</option>
+          </optgroup>
+          <optgroup label="🎵 Lagu Hiburan">
+            <option value="0">1. Super Mario Bros</option>
+            <option value="1">2. Zelda: Song of Storms</option>
+            <option value="2">3. Star Wars: Imperial</option>
+            <option value="3">4. Happy Birthday</option>
+            <option value="4">5. Tetris Theme</option>
+            <option value="24">25. Rick Roll</option>
+          </optgroup>
         </select>
         <div class="btn-group">
           <button onclick="playSong()" class="btn-on" style="background:#8b5cf6;">PLAY ▶</button>
@@ -150,28 +163,40 @@ const char HTML_BODY[] PROGMEM = R"=====(
         </form>
       </div>
     </div>
-
-    <div class="footer">
-      <a href="/csv" style="color:var(--primary);">📥 Download Log (.csv)</a>
-    </div>
   </div>
 
   <script>
     function update() {
       fetch('/data?ts=' + new Date().getTime()).then(r => r.json()).then(d => {
+        // Update Values
         document.getElementById('t').innerText = d.t.toFixed(1);
         document.getElementById('h').innerText = d.h.toFixed(0);
         document.getElementById('gas').innerText = d.gas;
+        document.getElementById('mq2').innerText = d.mq2;
         document.getElementById('db').innerText = d.db.toFixed(1);
-        document.getElementById('mood').innerText = d.mood;
+        document.getElementById('health').innerText = d.health;
         document.getElementById('ai_status').innerText = d.ai_stat;
         document.getElementById('time').innerText = d.time;
         document.getElementById('ip').innerText = window.location.hostname;
 
+        // Colors & Status
         document.getElementById('s_fan').style.color = d.fan ? '#10b981' : '#64748b';
         document.getElementById('s_lamp').style.color = d.lamp ? '#10b981' : '#64748b';
         document.getElementById('s_ai').innerText = d.ai ? "ON" : "OFF";
-        document.getElementById('s_ai').style.color = d.ai ? '#10b981' : '#ef4444';
+        document.getElementById('s_bell').innerText = d.bell ? "ON" : "OFF";
+
+        // Smoke Alert Visual
+        var smokeEl = document.getElementById('mq2');
+        var smokeStat = document.getElementById('smoke_status');
+        if(d.mq2 > 2000) {
+            smokeEl.style.color = '#ef4444';
+            smokeStat.innerText = "BAHAYA: ADA ASAP!";
+            smokeStat.style.color = '#ef4444';
+        } else {
+            smokeEl.style.color = '#f59e0b';
+            smokeStat.innerText = "Udara Bersih";
+            smokeStat.style.color = '#10b981';
+        }
       });
     }
 
@@ -180,9 +205,7 @@ const char HTML_BODY[] PROGMEM = R"=====(
       cmd('music_play&id=' + id);
     }
 
-    function playTone(freq) {
-      fetch('/cmd?do=tone&freq=' + freq);
-    }
+    function playTone(freq) { fetch('/cmd?do=tone&freq=' + freq); }
 
     function scanWifi() {
        var list = document.getElementById('wifi-list');
