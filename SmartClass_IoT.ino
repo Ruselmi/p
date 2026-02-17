@@ -1,14 +1,13 @@
 /*
  * SMART CLASS IOT - MINIMALIST EDITION (Single File)
  * Board: ESP32 Dev Module
- * Fitur: Monitoring Sensor, Telegram Bot, Web Dashboard (Stable & Debugged), Music Player, WiFi Manager (Scan & Connect)
+ * Fitur: Monitoring Sensor (Realtime), Telegram Bot, Web Dashboard (Stable), Music Player, WiFi Manager
  *
- * Update Fixes (v3.1):
- * - SECURITY: Removed hardcoded credentials.
- * - WEB: Fixed CORS duplicate headers (using server.enableCORS only).
- * - FORM: Fixed 'required' attribute on SSID dropdown to allow manual entry.
- * - MEMORY: Used DynamicJsonDocument for safer memory allocation.
- * - WIFI: Optimized reconnect logic.
+ * Update Fixes (v3.2 - Realtime):
+ * - WEB: Fetch data tiap 1 detik + Anti-Cache (timestamp query).
+ * - SENSOR: Pisahkan interval baca DHT (2s) dengan sensor analog (1s) agar lebih responsif.
+ * - SYSTEM: Memory safe dengan DynamicJsonDocument.
+ * - SECURITY: No hardcoded credentials.
  */
 
 #include <WiFi.h>
@@ -51,9 +50,9 @@ WiFiClientSecure client;
 UniversalTelegramBot bot("", client);
 Preferences pref;
 
-// Default values (bisa diubah lewat web atau hardcode di sini untuk test awal)
-String ssid_name = "YOUR_WIFI_SSID";
-String ssid_pass = "YOUR_WIFI_PASS";
+// Default values (bisa diubah lewat web)
+String ssid_name = "YOUR_SSID";
+String ssid_pass = "YOUR_PASS";
 String bot_token = "YOUR_BOT_TOKEN";
 String chat_id   = "YOUR_CHAT_ID";
 
@@ -67,10 +66,10 @@ bool is_day_time = true;
 bool alert_active = false;
 
 // Timer variables
-unsigned long last_sensor = 0;
+unsigned long last_dht = 0;
+unsigned long last_analog = 0;
 unsigned long last_bot = 0;
 unsigned long last_wifi_check = 0;
-unsigned long last_debug = 0;
 
 // ================= MUSIK (DEFINISI NADA) =================
 #define NOTE_G3  196
@@ -107,7 +106,8 @@ int melody_len = sizeof(melody_theme) / sizeof(int);
 
 // ================= FUNCTION PROTOTYPES =================
 void handleSaveSettings();
-void readSensors();
+void readDHT();
+void readAnalogSensors();
 void logicAuto();
 void handleJson();
 void handleCommand();
@@ -120,7 +120,7 @@ void updateTime();
 void checkAlert();
 void handleScanWiFi();
 
-// ================= WEB DASHBOARD (Updated) =================
+// ================= WEB DASHBOARD (Realtime Update) =================
 const char HTML_PAGE[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html lang="id">
@@ -197,14 +197,12 @@ const char HTML_PAGE[] PROGMEM = R"=====(
         <form action="/save" method="POST">
           <label>Pilih WiFi:</label>
           <div style="display:flex; gap:5px;">
-            <!-- Removed 'required' to allow manual input -->
             <select id="ssid_list" name="ssid">
               <option value="" disabled selected>-- Scan Dulu --</option>
             </select>
             <button type="button" onclick="scanWifi()" style="width:100px; padding:10px; background:#6366f1;">🔄 Scan</button>
           </div>
 
-          <!-- Fallback input text jika scan gagal atau hidden SSID -->
           <input type="text" id="ssid_manual" name="ssid_manual" placeholder="Atau ketik nama WiFi manual..." style="margin-top:-10px;">
 
           <label>WiFi Password:</label>
@@ -240,7 +238,8 @@ const char HTML_PAGE[] PROGMEM = R"=====(
 
   <script>
     function update() {
-      fetch('/data')
+      // ANTI-CACHE: Tambahkan timestamp agar browser selalu ambil data baru
+      fetch('/data?_=' + Date.now())
         .then(r => r.json())
         .then(d => {
           document.getElementById('t').innerText = d.t.toFixed(1);
@@ -261,7 +260,6 @@ const char HTML_PAGE[] PROGMEM = R"=====(
             document.getElementById('alert').style.display = 'none';
           }
 
-          // Indikator Online
           document.getElementById('dot').style.backgroundColor = '#10b981';
           document.getElementById('status_txt').innerText = "Online";
         })
@@ -297,8 +295,8 @@ const char HTML_PAGE[] PROGMEM = R"=====(
 
     function cmd(act) { fetch('/cmd?do='+act).then(update); }
 
-    // Update setiap 2 detik
-    setInterval(update, 2000);
+    // UPDATE LEBIH CEPAT (1 DETIK)
+    setInterval(update, 1000);
     update();
   </script>
 </body>
@@ -340,7 +338,6 @@ void setup() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.begin(ssid_name.c_str(), ssid_pass.c_str());
 
-  // Wait a bit for connection but don't hang forever
   int try_count = 0;
   while (WiFi.status() != WL_CONNECTED && try_count < 20) {
     delay(250); Serial.print(".");
@@ -365,9 +362,9 @@ void setup() {
   server.on("/data", handleJson);
   server.on("/cmd", handleCommand);
   server.on("/csv", handleDownload);
-  server.on("/scan", handleScanWiFi); // Endpoint Scan WiFi
+  server.on("/scan", handleScanWiFi);
   server.on("/save", HTTP_POST, handleSaveSettings);
-  server.enableCORS(true); // ENABLE CORS AGAR TIDAK DIBLOKIR BROWSER
+  server.enableCORS(true); // ENABLE CORS
   server.begin();
   Serial.println("[SERVER] Started");
 
@@ -386,28 +383,29 @@ void setup() {
 void loop() {
   server.handleClient(); // PENTING: Panggil ini sesering mungkin!
   handleMusic();
-  checkWiFi(); // Auto reconnect check
+  checkWiFi();
 
   unsigned long now = millis();
 
-  // 1. Baca Sensor (Setiap 2 detik)
-  // JANGAN TERLALU CEPAT agar Server sempat respons
-  if (now - last_sensor > 2000) {
-    last_sensor = now;
-    readSensors();
+  // 1. Baca Sensor DHT (Tiap 2 detik - Hardware Limit)
+  if (now - last_dht > 2000) {
+    last_dht = now;
+    readDHT();
+    // Debug info lebih jarang
+    Serial.print("[SENSOR] T:"); Serial.print(t);
+    Serial.print(" H:"); Serial.println(h);
+  }
+
+  // 2. Baca Sensor Analog Lain (Tiap 1 detik - Lebih cepat)
+  if (now - last_analog > 1000) {
+    last_analog = now;
+    readAnalogSensors();
     updateTime();
     logicAuto();
     checkAlert();
-
-    // DEBUG LOG SETIAP 2 DETIK
-    Serial.print("[SENSOR] T:"); Serial.print(t);
-    Serial.print(" H:"); Serial.print(h);
-    Serial.print(" Gas:"); Serial.print(gas);
-    Serial.print(" Time:"); Serial.println(time_str);
   }
 
-  // 2. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
-  // Mencegah musik patah-patah karena proses Telegram yang berat
+  // 3. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
   if (!is_playing && WiFi.status() == WL_CONNECTED && now - last_bot > 3000) {
     last_bot = now;
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
@@ -426,18 +424,16 @@ void handleScanWiFi() {
   int n = WiFi.scanNetworks();
   Serial.print("[WIFI] Found: "); Serial.println(n);
 
-  // Use DynamicJsonDocument for safer heap allocation (avoid stack overflow)
   DynamicJsonDocument doc(2048);
   JsonArray array = doc.to<JsonArray>();
 
   for (int i = 0; i < n; ++i) {
     array.add(WiFi.SSID(i));
-    if(i >= 20) break; // Batasi max 20 SSID
+    if(i >= 20) break;
   }
 
   String json;
   serializeJson(doc, json);
-  // NO MANUAL CORS HEADER HERE (server.enableCORS handles it)
   server.send(200, "application/json", json);
 }
 
@@ -451,7 +447,6 @@ void updateTime() {
   strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M", &timeinfo);
   time_str = String(timeStringBuff);
 
-  // Tentukan Siang/Malam (07:00 - 17:00 Aktif)
   int hour = timeinfo.tm_hour;
   if (hour >= 7 && hour < 17) {
     is_day_time = true;
@@ -461,13 +456,11 @@ void updateTime() {
 }
 
 void checkWiFi() {
-  // Cek koneksi setiap 10 detik. Jika putus, coba reconnect.
   unsigned long now = millis();
   if (now - last_wifi_check > 10000) {
     last_wifi_check = now;
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("[WIFI] Lost Connection. Reconnecting...");
-      // Removed WiFi.disconnect() to avoid aggressive loop
       WiFi.reconnect();
     }
   }
@@ -475,7 +468,7 @@ void checkWiFi() {
 
 int smoothAnalog(int pin) {
   long total = 0;
-  int samples = 5; // Kurangi sample agar loop lebih cepat
+  int samples = 5;
   for (int i = 0; i < samples; i++) {
     total += analogRead(pin);
     delay(2);
@@ -487,7 +480,7 @@ void handleSaveSettings() {
   if (server.hasArg("ssid") || server.hasArg("ssid_manual")) {
     String n_ssid = server.arg("ssid");
     if(server.arg("ssid_manual").length() > 0) {
-      n_ssid = server.arg("ssid_manual"); // Prioritas manual input jika diisi
+      n_ssid = server.arg("ssid_manual");
     }
 
     String n_pass = server.arg("pass");
@@ -509,12 +502,14 @@ void handleSaveSettings() {
   }
 }
 
-void readSensors() {
+void readDHT() {
   float _t = dht.readTemperature();
   float _h = dht.readHumidity();
   if (!isnan(_t)) t = _t;
   if (!isnan(_h)) h = _h;
+}
 
+void readAnalogSensors() {
   gas = smoothAnalog(PIN_MQ135);
   lux = smoothAnalog(PIN_LDR);
 
@@ -596,6 +591,12 @@ void handleJson() {
 
   String json;
   serializeJson(doc, json);
+
+  // ANTI-CACHE HEADERS
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+
   // NO MANUAL CORS HEADER HERE (server.enableCORS handles it)
   server.send(200, "application/json", json);
 }
@@ -610,7 +611,7 @@ void handleCommand() {
   if (act == "music_play") { is_playing = true; note_index = 0; note_state = false; last_note_start = millis(); }
   if (act == "music_stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); }
 
-  // NO MANUAL CORS HEADER HERE
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.send(200, "text/plain", "OK");
 }
 
