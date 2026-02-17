@@ -69,6 +69,7 @@ unsigned long last_dht = 0;
 unsigned long last_analog = 0;
 unsigned long last_bot = 0;
 unsigned long last_wifi_check = 0;
+unsigned long scan_start_time = 0; // For scan timeout
 
 #define NOTE_G3  196
 #define NOTE_C4  262
@@ -119,6 +120,9 @@ void setup() {
   pinMode(PIN_LAMP, OUTPUT);
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
+
+  pinMode(PIN_MQ135, INPUT); // Explicit Input
+  analogSetAttenuation(ADC_11db); // Range 0-3.3V
 
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(PIN_BUZZER, PWM_CHANNEL);
@@ -207,8 +211,14 @@ void handleScanWiFi() {
   int n = WiFi.scanComplete();
   if (n == -2) {
     WiFi.scanNetworks(true, true);
+    scan_start_time = millis();
     server.send(202, "application/json", "{\"status\":\"scanning\"}");
   } else if (n == -1) {
+    if (millis() - scan_start_time > 10000) { // Timeout 10s
+      WiFi.scanDelete();
+      WiFi.scanNetworks(true, true);
+      scan_start_time = millis();
+    }
     server.send(202, "application/json", "{\"status\":\"scanning\"}");
   } else {
     JsonDocument doc;
@@ -281,6 +291,9 @@ void readAnalogSensors() {
   db = (smoothAnalog(PIN_SOUND) / 4095.0) * 100.0;
   rssi = WiFi.RSSI();
 
+  // Debug output
+  Serial.printf("Gas:%d Lux:%0.1f Dist:%0.1f dB:%0.1f\n", gas, lux, dist, db);
+
   int s = 0;
   if (t > 28) s += 30; if (db > 60) s += 30; if (gas > 2000) s += 30;
   if (s < 30) mood = "Nyaman"; else if (s < 60) mood = "Fokus"; else mood = "Tidak Kondusif";
@@ -332,11 +345,32 @@ void handleDownload() {
 
 void handleMusic() {
   if (!is_playing) return;
-  int dur = 1000 / durations_theme[note_index];
+
   unsigned long now = millis();
-  if (!note_state) { ledcWriteTone(PWM_CHANNEL, melody_theme[note_index]); note_state = true; last_note_start = now; }
-  if (note_state && (now - last_note_start > dur)) ledcWriteTone(PWM_CHANNEL, 0);
-  if (now - last_note_start > (dur * 1.30)) { note_state = false; note_index++; if(note_index >= melody_len) note_index=0; }
+  int duration = 1000 / durations_theme[note_index];
+  int pause = duration * 1.30;
+
+  if (!note_state) {
+    // Start Note
+    ledcWriteTone(PWM_CHANNEL, melody_theme[note_index]);
+    note_state = true;
+    last_note_start = now;
+    // Serial.printf("Play Note %d: %d Hz\n", note_index, melody_theme[note_index]);
+  } else {
+    // Check if note duration passed
+    if (now - last_note_start > duration) {
+      ledcWriteTone(PWM_CHANNEL, 0); // Stop tone
+    }
+    // Check if pause duration passed (next note)
+    if (now - last_note_start > pause) {
+      note_state = false;
+      note_index++;
+      if (note_index >= melody_len) {
+        note_index = 0; // Loop
+        // is_playing = false; // Uncomment to play once
+      }
+    }
+  }
 }
 
 void handleTelegram(int n) {
