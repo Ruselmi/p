@@ -344,15 +344,14 @@ void readSensors() {
   db = (raw_sound / 4095.0) * 100.0; // Calibration rough
 
   // Safety Logic (Gas/Smoke)
-  // FIX: Sensor Analog Mentok -> Kita hanya percaya Digital Output (DO) untuk Alert
+  // DATA UTAMA: Analog (gas > 3000)
+  // DATA CADANGAN: Digital (gas_dig == HIGH)
   bool warmup_done = (millis() > 60000);
 
-  // Alert jika DO detect HIGH (UPDATE: User report "kebalik", so changing to Active HIGH)
-  // Check your module: If LED ON when gas detected, check if pin goes LOW or HIGH.
-  // Previously LOW, now trying HIGH based on feedback.
-  bool gas_alert = (gas_dig == HIGH);
+  // Alert jika Analog Tinggi (Utama) ATAU Digital Detect (Cadangan)
+  bool gas_alert = (gas > 3000) || (gas_dig == HIGH);
 
-  // MQ2 Analog Threshold (Tuning: 3500 is high, preventing false pos)
+  // MQ2 Analog Threshold
   bool smoke_alert = (mq2_val > 3500);
   unsigned long now = millis();
 
@@ -382,6 +381,7 @@ void logicAuto() {
 
   // Logic: Lux < 500 OR LDR Digital Trigger -> Lamp ON
   // UPDATE: Inverted LDR Digital Logic based on feedback (Active LOW = Dark)
+  // Logic: Lux < 500 (Utama) OR LDR Digital Trigger (Cadangan) -> Lamp ON
   if (lux < 500 || ldr_dig == LOW) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
   else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
 }
