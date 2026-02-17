@@ -3,10 +3,10 @@
  * Board: ESP32 Dev Module
  * Fitur: Monitoring Sensor (Realtime), Telegram Bot, Web Dashboard (Stable), Music Player, WiFi Manager
  *
- * Update Fixes (v3.2 - Realtime):
- * - WEB: Fetch data tiap 1 detik + Anti-Cache (timestamp query).
- * - SENSOR: Pisahkan interval baca DHT (2s) dengan sensor analog (1s) agar lebih responsif.
- * - SYSTEM: Memory safe dengan DynamicJsonDocument.
+ * Update Fixes (v3.3 - Compiler Safe):
+ * - STRUCTURE: Setup & Loop dipindah ke ATAS agar tidak tertelan string HTML.
+ * - WEB: Fetch data tiap 1 detik + Anti-Cache.
+ * - SENSOR: Interval terpisah (DHT 2s, Analog 1s).
  * - SECURITY: No hardcoded credentials.
  */
 
@@ -120,7 +120,372 @@ void updateTime();
 void checkAlert();
 void handleScanWiFi();
 
-// ================= WEB DASHBOARD (Realtime Update) =================
+// Forward Declaration HTML (Isi ada di paling bawah)
+extern const char HTML_PAGE[];
+
+// ================= LOGIKA UTAMA (SETUP & LOOP) =================
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("\n\n--- SMART CLASS IOT STARTING ---");
+
+  // 1. Setup Pin & PWM Buzzer
+  pinMode(PIN_FAN, OUTPUT);
+  pinMode(PIN_LAMP, OUTPUT);
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+
+  // Setup PWM LEDC untuk Buzzer
+  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(PIN_BUZZER, PWM_CHANNEL);
+  ledcWriteTone(PWM_CHANNEL, 0); // Matikan buzzer di awal
+
+  dht.begin();
+
+  // 2. Load Preferences
+  pref.begin("smartclass", false);
+  ssid_name = pref.getString("ssid", ssid_name);
+  ssid_pass = pref.getString("pass", ssid_pass);
+  bot_token = pref.getString("bot", bot_token);
+  chat_id   = pref.getString("id", chat_id);
+
+  bot.updateToken(bot_token);
+  Serial.println("[SETUP] Preferences Loaded");
+
+  // 3. Koneksi WiFi (Non-Blocking Attempt)
+  Serial.print("[WIFI] Connecting to: "); Serial.println(ssid_name);
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.begin(ssid_name.c_str(), ssid_pass.c_str());
+
+  int try_count = 0;
+  while (WiFi.status() != WL_CONNECTED && try_count < 20) {
+    delay(250); Serial.print(".");
+    try_count++;
+  }
+
+  if(WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WIFI] Connected!");
+    Serial.print("[WIFI] IP Address: "); Serial.println(WiFi.localIP());
+    // Init NTP Time
+    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET, "pool.ntp.org", "time.nist.gov");
+    Serial.println("[NTP] Time synced");
+  } else {
+    Serial.println("\n[WIFI] Failed. Starting AP Mode.");
+    WiFi.softAP("SmartClass_AP");
+    Serial.print("[AP] IP Address: "); Serial.println(WiFi.softAPIP());
+  }
+
+  // 4. Setup Server
+  client.setInsecure();
+  server.on("/", [](){ server.send(200, "text/html", HTML_PAGE); });
+  server.on("/data", handleJson);
+  server.on("/cmd", handleCommand);
+  server.on("/csv", handleDownload);
+  server.on("/scan", handleScanWiFi);
+  server.on("/save", HTTP_POST, handleSaveSettings);
+  server.enableCORS(true); // ENABLE CORS
+  server.begin();
+  Serial.println("[SERVER] Started");
+
+  // --- STARTUP SOUND: MARIO INTRO ---
+  int mario_notes[] = {NOTE_E5, NOTE_E5, NOTE_E5, NOTE_C5, NOTE_E5, NOTE_G5, NOTE_G4};
+  int mario_durs[]  = {100, 100, 100, 100, 100, 200, 200}; // Durasi ms
+
+  for(int i=0; i<7; i++){
+    ledcWriteTone(PWM_CHANNEL, mario_notes[i]);
+    delay(mario_durs[i]);
+    ledcWriteTone(PWM_CHANNEL, 0);
+    delay(50); // Jeda antar nada
+  }
+}
+
+void loop() {
+  server.handleClient(); // PENTING: Panggil ini sesering mungkin!
+  handleMusic();
+  checkWiFi();
+
+  unsigned long now = millis();
+
+  // 1. Baca Sensor DHT (Tiap 2 detik - Hardware Limit)
+  if (now - last_dht > 2000) {
+    last_dht = now;
+    readDHT();
+    // Debug info lebih jarang
+    Serial.print("[SENSOR] T:"); Serial.print(t);
+    Serial.print(" H:"); Serial.println(h);
+  }
+
+  // 2. Baca Sensor Analog Lain (Tiap 1 detik - Lebih cepat)
+  if (now - last_analog > 1000) {
+    last_analog = now;
+    readAnalogSensors();
+    updateTime();
+    logicAuto();
+    checkAlert();
+  }
+
+  // 3. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
+  if (!is_playing && WiFi.status() == WL_CONNECTED && now - last_bot > 3000) {
+    last_bot = now;
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    while(numNewMessages) {
+      Serial.println("[BOT] New Message!");
+      handleTelegram(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+  }
+}
+
+// ================= FUNGSI-FUNGSI PENDUKUNG =================
+
+void handleScanWiFi() {
+  Serial.println("[WIFI] Scanning Networks...");
+  int n = WiFi.scanNetworks();
+  Serial.print("[WIFI] Found: "); Serial.println(n);
+
+  DynamicJsonDocument doc(2048);
+  JsonArray array = doc.to<JsonArray>();
+
+  for (int i = 0; i < n; ++i) {
+    array.add(WiFi.SSID(i));
+    if(i >= 20) break;
+  }
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void updateTime() {
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    time_str = "--:--";
+    return;
+  }
+  char timeStringBuff[10];
+  strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M", &timeinfo);
+  time_str = String(timeStringBuff);
+
+  int hour = timeinfo.tm_hour;
+  if (hour >= 7 && hour < 17) {
+    is_day_time = true;
+  } else {
+    is_day_time = false;
+  }
+}
+
+void checkWiFi() {
+  unsigned long now = millis();
+  if (now - last_wifi_check > 10000) {
+    last_wifi_check = now;
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("[WIFI] Lost Connection. Reconnecting...");
+      WiFi.reconnect();
+    }
+  }
+}
+
+int smoothAnalog(int pin) {
+  long total = 0;
+  int samples = 5;
+  for (int i = 0; i < samples; i++) {
+    total += analogRead(pin);
+    delay(2);
+  }
+  return total / samples;
+}
+
+void handleSaveSettings() {
+  if (server.hasArg("ssid") || server.hasArg("ssid_manual")) {
+    String n_ssid = server.arg("ssid");
+    if(server.arg("ssid_manual").length() > 0) {
+      n_ssid = server.arg("ssid_manual");
+    }
+
+    String n_pass = server.arg("pass");
+    String n_bot  = server.arg("bot");
+    String n_id   = server.arg("id");
+
+    Serial.println("[SETTINGS] Saving new config...");
+    pref.putString("ssid", n_ssid);
+    pref.putString("pass", n_pass);
+    if(n_bot.length() > 5) pref.putString("bot", n_bot);
+    if(n_id.length() > 5)  pref.putString("id", n_id);
+
+    String html = "<html><body><h1>Berhasil Disimpan!</h1><p>Alat akan restart...</p></body></html>";
+    server.send(200, "text/html", html);
+    delay(2000);
+    ESP.restart();
+  } else {
+    server.send(400, "text/plain", "Error: SSID kosong");
+  }
+}
+
+void readDHT() {
+  float _t = dht.readTemperature();
+  float _h = dht.readHumidity();
+  if (!isnan(_t)) t = _t;
+  if (!isnan(_h)) h = _h;
+}
+
+void readAnalogSensors() {
+  gas = smoothAnalog(PIN_MQ135);
+  lux = smoothAnalog(PIN_LDR);
+
+  // Ultrasonik Timeout pendek (30ms)
+  digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2);
+  digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+  long dur = pulseIn(PIN_ECHO, HIGH, 30000);
+  dist = (dur == 0) ? 0 : dur * 0.034 / 2;
+
+  int raw_sound = smoothAnalog(PIN_SOUND);
+  db = (raw_sound / 4095.0) * 100.0;
+
+  rssi = WiFi.RSSI();
+
+  int stress = 0;
+  if (t > 28) stress += 30;
+  if (db > 60) stress += 30;
+  if (gas > 2000) stress += 30;
+
+  if (stress < 30) mood = "Nyaman 😊";
+  else if (stress < 60) mood = "Fokus 😐";
+  else mood = "Tidak Kondusif 😡";
+}
+
+void checkAlert() {
+  bool current_danger = (gas > GAS_ALARM_LIMIT) || (t > TEMP_ALARM_LIMIT);
+
+  if (current_danger && !alert_active) {
+    Serial.println("[ALERT] Danger Detected!");
+    String msg = "⚠️ *PERINGATAN BAHAYA!*\n\n";
+    if(gas > GAS_ALARM_LIMIT) msg += "🔥 Gas Tinggi: " + String(gas) + " PPM\n";
+    if(t > TEMP_ALARM_LIMIT)  msg += "🌡 Suhu Panas: " + String(t) + " °C\n";
+    msg += "\nSegera cek lokasi!";
+    bot.sendMessage(chat_id, msg, "Markdown");
+    alert_active = true;
+  }
+  else if (!current_danger && alert_active) {
+    Serial.println("[ALERT] Condition Normal.");
+    bot.sendMessage(chat_id, "✅ *KONDISI AMAN*\nSensor kembali normal.", "Markdown");
+    alert_active = false;
+  }
+}
+
+void logicAuto() {
+  if (!mode_auto) return;
+
+  if (!is_day_time) {
+    st_fan = false;
+    st_lamp = false;
+    digitalWrite(PIN_FAN, LOW);
+    digitalWrite(PIN_LAMP, LOW);
+    return;
+  }
+
+  if (t > 27.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
+  else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
+
+  if (lux < 500) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
+  else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
+}
+
+void handleJson() {
+  StaticJsonDocument<1024> doc;
+
+  doc["t"] = t;
+  doc["h"] = h;
+  doc["gas"] = gas;
+  doc["db"] = db;
+  doc["rssi"] = rssi;
+  doc["fan"] = st_fan;
+  doc["lamp"] = st_lamp;
+  doc["auto"] = mode_auto;
+  doc["mood"] = mood;
+  doc["time"] = time_str;
+  doc["alert"] = alert_active;
+
+  String json;
+  serializeJson(doc, json);
+
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+
+  server.send(200, "application/json", json);
+}
+
+void handleCommand() {
+  String act = server.arg("do");
+  Serial.print("[CMD] Received: "); Serial.println(act);
+
+  if (act == "fan_toggle") { mode_auto = false; st_fan = !st_fan; digitalWrite(PIN_FAN, st_fan); }
+  if (act == "lamp_toggle") { mode_auto = false; st_lamp = !st_lamp; digitalWrite(PIN_LAMP, st_lamp); }
+  if (act == "auto_toggle") { mode_auto = !mode_auto; }
+  if (act == "music_play") { is_playing = true; note_index = 0; note_state = false; last_note_start = millis(); }
+  if (act == "music_stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); }
+
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.send(200, "text/plain", "OK");
+}
+
+void handleDownload() {
+  String csv = "Waktu,Suhu,Lembab,Gas,Suara,RSSI\n";
+  csv += String(millis()) + "," + String(t) + "," + String(h) + "," + String(gas) + "," + String(db) + "," + String(rssi);
+  server.sendHeader("Content-Disposition", "attachment; filename=log_kelas.csv");
+  server.send(200, "text/csv", csv);
+}
+
+void handleMusic() {
+  if (!is_playing) return;
+
+  int note_duration = 1000 / durations_theme[note_index];
+  int pause_between = note_duration * 1.30;
+  unsigned long now = millis();
+
+  if (!note_state) {
+    ledcWriteTone(PWM_CHANNEL, melody_theme[note_index]);
+    note_state = true;
+    last_note_start = now;
+  }
+
+  if (note_state && (now - last_note_start > note_duration)) {
+    ledcWriteTone(PWM_CHANNEL, 0);
+  }
+
+  if (now - last_note_start > pause_between) {
+    note_state = false;
+    note_index++;
+    if (note_index >= melody_len) { note_index = 0; }
+  }
+}
+
+void handleTelegram(int numNewMessages) {
+  for (int i = 0; i < numNewMessages; i++) {
+    String chat_id_msg = bot.messages[i].chat_id;
+    String text = bot.messages[i].text;
+    Serial.print("[BOT] Msg: "); Serial.println(text);
+
+    if (text == "/start") {
+      bot.sendMessage(chat_id_msg, "Halo! Perintah: /cek, /fan_on, /fan_off, /lamp_on, /lamp_off", "");
+    }
+    else if (text == "/cek") {
+      String msg = "Status Kelas (" + time_str + "):\n";
+      msg += "🌡 Suhu: " + String(t) + "C\n";
+      msg += "💡 Lampu: " + String(st_lamp?"ON":"OFF") + "\n";
+      msg += "⚠️ Alert: " + String(alert_active?"BAHAYA":"AMAN");
+      bot.sendMessage(chat_id_msg, msg, "");
+    }
+    else if (text == "/fan_on") { mode_auto=false; st_fan=true; digitalWrite(PIN_FAN, HIGH); bot.sendMessage(chat_id_msg, "Kipas ON", ""); }
+    else if (text == "/fan_off") { mode_auto=false; st_fan=false; digitalWrite(PIN_FAN, LOW); bot.sendMessage(chat_id_msg, "Kipas OFF", ""); }
+    else if (text == "/lamp_on") { mode_auto=false; st_lamp=true; digitalWrite(PIN_LAMP, HIGH); bot.sendMessage(chat_id_msg, "Lampu ON", ""); }
+    else if (text == "/lamp_off") { mode_auto=false; st_lamp=false; digitalWrite(PIN_LAMP, LOW); bot.sendMessage(chat_id_msg, "Lampu OFF", ""); }
+  }
+}
+
+// ================= HTML SECTION (DI BAWAH) =================
 const char HTML_PAGE[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html lang="id">
@@ -302,370 +667,3 @@ const char HTML_PAGE[] PROGMEM = R"=====(
 </body>
 </html>
 )=====";
-
-// ================= LOGIKA UTAMA =================
-
-void setup() {
-  Serial.begin(115200);
-  Serial.println("\n\n--- SMART CLASS IOT STARTING ---");
-
-  // 1. Setup Pin & PWM Buzzer
-  pinMode(PIN_FAN, OUTPUT);
-  pinMode(PIN_LAMP, OUTPUT);
-  pinMode(PIN_TRIG, OUTPUT);
-  pinMode(PIN_ECHO, INPUT);
-
-  // Setup PWM LEDC untuk Buzzer
-  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttachPin(PIN_BUZZER, PWM_CHANNEL);
-  ledcWriteTone(PWM_CHANNEL, 0); // Matikan buzzer di awal
-
-  dht.begin();
-
-  // 2. Load Preferences
-  pref.begin("smartclass", false);
-  ssid_name = pref.getString("ssid", ssid_name);
-  ssid_pass = pref.getString("pass", ssid_pass);
-  bot_token = pref.getString("bot", bot_token);
-  chat_id   = pref.getString("id", chat_id);
-
-  bot.updateToken(bot_token);
-  Serial.println("[SETUP] Preferences Loaded");
-
-  // 3. Koneksi WiFi (Non-Blocking Attempt)
-  Serial.print("[WIFI] Connecting to: "); Serial.println(ssid_name);
-
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.begin(ssid_name.c_str(), ssid_pass.c_str());
-
-  int try_count = 0;
-  while (WiFi.status() != WL_CONNECTED && try_count < 20) {
-    delay(250); Serial.print(".");
-    try_count++;
-  }
-
-  if(WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n[WIFI] Connected!");
-    Serial.print("[WIFI] IP Address: "); Serial.println(WiFi.localIP());
-    // Init NTP Time
-    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET, "pool.ntp.org", "time.nist.gov");
-    Serial.println("[NTP] Time synced");
-  } else {
-    Serial.println("\n[WIFI] Failed. Starting AP Mode.");
-    WiFi.softAP("SmartClass_AP");
-    Serial.print("[AP] IP Address: "); Serial.println(WiFi.softAPIP());
-  }
-
-  // 4. Setup Server
-  client.setInsecure();
-  server.on("/", [](){ server.send(200, "text/html", HTML_PAGE); });
-  server.on("/data", handleJson);
-  server.on("/cmd", handleCommand);
-  server.on("/csv", handleDownload);
-  server.on("/scan", handleScanWiFi);
-  server.on("/save", HTTP_POST, handleSaveSettings);
-  server.enableCORS(true); // ENABLE CORS
-  server.begin();
-  Serial.println("[SERVER] Started");
-
-  // --- STARTUP SOUND: MARIO INTRO ---
-  int mario_notes[] = {NOTE_E5, NOTE_E5, NOTE_E5, NOTE_C5, NOTE_E5, NOTE_G5, NOTE_G4};
-  int mario_durs[]  = {100, 100, 100, 100, 100, 200, 200}; // Durasi ms
-
-  for(int i=0; i<7; i++){
-    ledcWriteTone(PWM_CHANNEL, mario_notes[i]);
-    delay(mario_durs[i]);
-    ledcWriteTone(PWM_CHANNEL, 0);
-    delay(50); // Jeda antar nada
-  }
-}
-
-void loop() {
-  server.handleClient(); // PENTING: Panggil ini sesering mungkin!
-  handleMusic();
-  checkWiFi();
-
-  unsigned long now = millis();
-
-  // 1. Baca Sensor DHT (Tiap 2 detik - Hardware Limit)
-  if (now - last_dht > 2000) {
-    last_dht = now;
-    readDHT();
-    // Debug info lebih jarang
-    Serial.print("[SENSOR] T:"); Serial.print(t);
-    Serial.print(" H:"); Serial.println(h);
-  }
-
-  // 2. Baca Sensor Analog Lain (Tiap 1 detik - Lebih cepat)
-  if (now - last_analog > 1000) {
-    last_analog = now;
-    readAnalogSensors();
-    updateTime();
-    logicAuto();
-    checkAlert();
-  }
-
-  // 3. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
-  if (!is_playing && WiFi.status() == WL_CONNECTED && now - last_bot > 3000) {
-    last_bot = now;
-    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    while(numNewMessages) {
-      Serial.println("[BOT] New Message!");
-      handleTelegram(numNewMessages);
-      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
-    }
-  }
-}
-
-// ================= FUNGSI-FUNGSI =================
-
-void handleScanWiFi() {
-  Serial.println("[WIFI] Scanning Networks...");
-  int n = WiFi.scanNetworks();
-  Serial.print("[WIFI] Found: "); Serial.println(n);
-
-  DynamicJsonDocument doc(2048);
-  JsonArray array = doc.to<JsonArray>();
-
-  for (int i = 0; i < n; ++i) {
-    array.add(WiFi.SSID(i));
-    if(i >= 20) break;
-  }
-
-  String json;
-  serializeJson(doc, json);
-  server.send(200, "application/json", json);
-}
-
-void updateTime() {
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    time_str = "--:--";
-    return;
-  }
-  char timeStringBuff[10];
-  strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M", &timeinfo);
-  time_str = String(timeStringBuff);
-
-  int hour = timeinfo.tm_hour;
-  if (hour >= 7 && hour < 17) {
-    is_day_time = true;
-  } else {
-    is_day_time = false;
-  }
-}
-
-void checkWiFi() {
-  unsigned long now = millis();
-  if (now - last_wifi_check > 10000) {
-    last_wifi_check = now;
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("[WIFI] Lost Connection. Reconnecting...");
-      WiFi.reconnect();
-    }
-  }
-}
-
-int smoothAnalog(int pin) {
-  long total = 0;
-  int samples = 5;
-  for (int i = 0; i < samples; i++) {
-    total += analogRead(pin);
-    delay(2);
-  }
-  return total / samples;
-}
-
-void handleSaveSettings() {
-  if (server.hasArg("ssid") || server.hasArg("ssid_manual")) {
-    String n_ssid = server.arg("ssid");
-    if(server.arg("ssid_manual").length() > 0) {
-      n_ssid = server.arg("ssid_manual");
-    }
-
-    String n_pass = server.arg("pass");
-    String n_bot  = server.arg("bot");
-    String n_id   = server.arg("id");
-
-    Serial.println("[SETTINGS] Saving new config...");
-    pref.putString("ssid", n_ssid);
-    pref.putString("pass", n_pass);
-    if(n_bot.length() > 5) pref.putString("bot", n_bot);
-    if(n_id.length() > 5)  pref.putString("id", n_id);
-
-    String html = "<html><body><h1>Berhasil Disimpan!</h1><p>Alat akan restart...</p></body></html>";
-    server.send(200, "text/html", html);
-    delay(2000);
-    ESP.restart();
-  } else {
-    server.send(400, "text/plain", "Error: SSID kosong");
-  }
-}
-
-void readDHT() {
-  float _t = dht.readTemperature();
-  float _h = dht.readHumidity();
-  if (!isnan(_t)) t = _t;
-  if (!isnan(_h)) h = _h;
-}
-
-void readAnalogSensors() {
-  gas = smoothAnalog(PIN_MQ135);
-  lux = smoothAnalog(PIN_LDR);
-
-  // Ultrasonik Timeout pendek (30ms)
-  digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2);
-  digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10);
-  digitalWrite(PIN_TRIG, LOW);
-  long dur = pulseIn(PIN_ECHO, HIGH, 30000);
-  dist = (dur == 0) ? 0 : dur * 0.034 / 2;
-
-  int raw_sound = smoothAnalog(PIN_SOUND);
-  db = (raw_sound / 4095.0) * 100.0;
-
-  rssi = WiFi.RSSI();
-
-  int stress = 0;
-  if (t > 28) stress += 30;
-  if (db > 60) stress += 30;
-  if (gas > 2000) stress += 30;
-
-  if (stress < 30) mood = "Nyaman 😊";
-  else if (stress < 60) mood = "Fokus 😐";
-  else mood = "Tidak Kondusif 😡";
-}
-
-void checkAlert() {
-  bool current_danger = (gas > GAS_ALARM_LIMIT) || (t > TEMP_ALARM_LIMIT);
-
-  if (current_danger && !alert_active) {
-    Serial.println("[ALERT] Danger Detected!");
-    String msg = "⚠️ *PERINGATAN BAHAYA!*\n\n";
-    if(gas > GAS_ALARM_LIMIT) msg += "🔥 Gas Tinggi: " + String(gas) + " PPM\n";
-    if(t > TEMP_ALARM_LIMIT)  msg += "🌡 Suhu Panas: " + String(t) + " °C\n";
-    msg += "\nSegera cek lokasi!";
-    bot.sendMessage(chat_id, msg, "Markdown");
-    alert_active = true;
-  }
-  else if (!current_danger && alert_active) {
-    Serial.println("[ALERT] Condition Normal.");
-    bot.sendMessage(chat_id, "✅ *KONDISI AMAN*\nSensor kembali normal.", "Markdown");
-    alert_active = false;
-  }
-}
-
-void logicAuto() {
-  if (!mode_auto) return;
-
-  if (!is_day_time) {
-    st_fan = false;
-    st_lamp = false;
-    digitalWrite(PIN_FAN, LOW);
-    digitalWrite(PIN_LAMP, LOW);
-    return;
-  }
-
-  if (t > 27.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
-  else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
-
-  if (lux < 500) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
-  else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
-}
-
-void handleJson() {
-  // PENGGUNAAN MEMORI YANG AMAN (ArduinoJson Static)
-  // Mencegah heap fragmentation penyebab crash
-  StaticJsonDocument<1024> doc; // Buffer lebih besar
-
-  doc["t"] = t;
-  doc["h"] = h;
-  doc["gas"] = gas;
-  doc["db"] = db;
-  doc["rssi"] = rssi;
-  doc["fan"] = st_fan;
-  doc["lamp"] = st_lamp;
-  doc["auto"] = mode_auto;
-  doc["mood"] = mood;
-  doc["time"] = time_str;
-  doc["alert"] = alert_active;
-
-  String json;
-  serializeJson(doc, json);
-
-  // ANTI-CACHE HEADERS
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Expires", "-1");
-
-  // NO MANUAL CORS HEADER HERE (server.enableCORS handles it)
-  server.send(200, "application/json", json);
-}
-
-void handleCommand() {
-  String act = server.arg("do");
-  Serial.print("[CMD] Received: "); Serial.println(act);
-
-  if (act == "fan_toggle") { mode_auto = false; st_fan = !st_fan; digitalWrite(PIN_FAN, st_fan); }
-  if (act == "lamp_toggle") { mode_auto = false; st_lamp = !st_lamp; digitalWrite(PIN_LAMP, st_lamp); }
-  if (act == "auto_toggle") { mode_auto = !mode_auto; }
-  if (act == "music_play") { is_playing = true; note_index = 0; note_state = false; last_note_start = millis(); }
-  if (act == "music_stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); }
-
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  server.send(200, "text/plain", "OK");
-}
-
-void handleDownload() {
-  String csv = "Waktu,Suhu,Lembab,Gas,Suara,RSSI\n";
-  csv += String(millis()) + "," + String(t) + "," + String(h) + "," + String(gas) + "," + String(db) + "," + String(rssi);
-  server.sendHeader("Content-Disposition", "attachment; filename=log_kelas.csv");
-  server.send(200, "text/csv", csv);
-}
-
-// LOGIKA MUSIK
-void handleMusic() {
-  if (!is_playing) return;
-
-  int note_duration = 1000 / durations_theme[note_index];
-  int pause_between = note_duration * 1.30;
-  unsigned long now = millis();
-
-  if (!note_state) {
-    ledcWriteTone(PWM_CHANNEL, melody_theme[note_index]);
-    note_state = true;
-    last_note_start = now;
-  }
-
-  if (note_state && (now - last_note_start > note_duration)) {
-    ledcWriteTone(PWM_CHANNEL, 0);
-  }
-
-  if (now - last_note_start > pause_between) {
-    note_state = false;
-    note_index++;
-    if (note_index >= melody_len) { note_index = 0; }
-  }
-}
-
-void handleTelegram(int numNewMessages) {
-  for (int i = 0; i < numNewMessages; i++) {
-    String chat_id_msg = bot.messages[i].chat_id;
-    String text = bot.messages[i].text;
-    Serial.print("[BOT] Msg: "); Serial.println(text);
-
-    if (text == "/start") {
-      bot.sendMessage(chat_id_msg, "Halo! Perintah: /cek, /fan_on, /fan_off, /lamp_on, /lamp_off", "");
-    }
-    else if (text == "/cek") {
-      String msg = "Status Kelas (" + time_str + "):\n";
-      msg += "🌡 Suhu: " + String(t) + "C\n";
-      msg += "💡 Lampu: " + String(st_lamp?"ON":"OFF") + "\n";
-      msg += "⚠️ Alert: " + String(alert_active?"BAHAYA":"AMAN");
-      bot.sendMessage(chat_id_msg, msg, "");
-    }
-    else if (text == "/fan_on") { mode_auto=false; st_fan=true; digitalWrite(PIN_FAN, HIGH); bot.sendMessage(chat_id_msg, "Kipas ON", ""); }
-    else if (text == "/fan_off") { mode_auto=false; st_fan=false; digitalWrite(PIN_FAN, LOW); bot.sendMessage(chat_id_msg, "Kipas OFF", ""); }
-    else if (text == "/lamp_on") { mode_auto=false; st_lamp=true; digitalWrite(PIN_LAMP, HIGH); bot.sendMessage(chat_id_msg, "Lampu ON", ""); }
-    else if (text == "/lamp_off") { mode_auto=false; st_lamp=false; digitalWrite(PIN_LAMP, LOW); bot.sendMessage(chat_id_msg, "Lampu OFF", ""); }
-  }
-}
