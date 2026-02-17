@@ -3,11 +3,10 @@
  * Board: ESP32 Dev Module
  * Fitur: Monitoring Sensor (Realtime), Telegram Bot, Web Dashboard (Stable), Music Player, WiFi Manager
  *
- * Update Fixes (v3.3 - Compiler Safe):
- * - STRUCTURE: Setup & Loop dipindah ke ATAS agar tidak tertelan string HTML.
- * - WEB: Fetch data tiap 1 detik + Anti-Cache.
- * - SENSOR: Interval terpisah (DHT 2s, Analog 1s).
- * - SECURITY: No hardcoded credentials.
+ * Update Fixes (v3.4 - JSON v7 & HTML Safe):
+ * - COMPILER: HTML string dipisah agar aman dari error "function does not name a type".
+ * - JSON: Update ke ArduinoJson v7 (menggunakan JsonDocument).
+ * - STRUCTURE: Setup & Loop tetap di atas.
  */
 
 #include <WiFi.h>
@@ -50,7 +49,7 @@ WiFiClientSecure client;
 UniversalTelegramBot bot("", client);
 Preferences pref;
 
-// Default values (bisa diubah lewat web)
+// Default values
 String ssid_name = "YOUR_SSID";
 String ssid_pass = "YOUR_PASS";
 String bot_token = "YOUR_BOT_TOKEN";
@@ -119,11 +118,9 @@ int smoothAnalog(int pin);
 void updateTime();
 void checkAlert();
 void handleScanWiFi();
+void handleRoot();
 
-// Forward Declaration HTML (Isi ada di paling bawah)
-extern const char HTML_PAGE[];
-
-// ================= LOGIKA UTAMA (SETUP & LOOP) =================
+// ================= LOGIKA UTAMA =================
 
 void setup() {
   Serial.begin(115200);
@@ -152,7 +149,7 @@ void setup() {
   bot.updateToken(bot_token);
   Serial.println("[SETUP] Preferences Loaded");
 
-  // 3. Koneksi WiFi (Non-Blocking Attempt)
+  // 3. Koneksi WiFi
   Serial.print("[WIFI] Connecting to: "); Serial.println(ssid_name);
 
   WiFi.mode(WIFI_AP_STA);
@@ -178,7 +175,7 @@ void setup() {
 
   // 4. Setup Server
   client.setInsecure();
-  server.on("/", [](){ server.send(200, "text/html", HTML_PAGE); });
+  server.on("/", handleRoot);
   server.on("/data", handleJson);
   server.on("/cmd", handleCommand);
   server.on("/csv", handleDownload);
@@ -190,7 +187,7 @@ void setup() {
 
   // --- STARTUP SOUND: MARIO INTRO ---
   int mario_notes[] = {NOTE_E5, NOTE_E5, NOTE_E5, NOTE_C5, NOTE_E5, NOTE_G5, NOTE_G4};
-  int mario_durs[]  = {100, 100, 100, 100, 100, 200, 200}; // Durasi ms
+  int mario_durs[]  = {100, 100, 100, 100, 100, 200, 200};
 
   for(int i=0; i<7; i++){
     ledcWriteTone(PWM_CHANNEL, mario_notes[i]);
@@ -201,28 +198,29 @@ void setup() {
 }
 
 void loop() {
-  server.handleClient(); // PENTING: Panggil ini sesering mungkin!
+  server.handleClient();
   handleMusic();
   checkWiFi();
 
   unsigned long now = millis();
 
-  // 1. Baca Sensor DHT (Tiap 2 detik - Hardware Limit)
+  // 1. Baca Sensor DHT (Tiap 2 detik)
   if (now - last_dht > 2000) {
     last_dht = now;
     readDHT();
-    // Debug info lebih jarang
-    Serial.print("[SENSOR] T:"); Serial.print(t);
-    Serial.print(" H:"); Serial.println(h);
   }
 
-  // 2. Baca Sensor Analog Lain (Tiap 1 detik - Lebih cepat)
+  // 2. Baca Sensor Analog Lain (Tiap 1 detik)
   if (now - last_analog > 1000) {
     last_analog = now;
     readAnalogSensors();
     updateTime();
     logicAuto();
     checkAlert();
+
+    // Debug info
+    Serial.print("[SENSOR] T:"); Serial.print(t);
+    Serial.print(" H:"); Serial.println(h);
   }
 
   // 3. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
@@ -244,7 +242,8 @@ void handleScanWiFi() {
   int n = WiFi.scanNetworks();
   Serial.print("[WIFI] Found: "); Serial.println(n);
 
-  DynamicJsonDocument doc(2048);
+  // JSON v7: JsonDocument
+  JsonDocument doc;
   JsonArray array = doc.to<JsonArray>();
 
   for (int i = 0; i < n; ++i) {
@@ -333,7 +332,6 @@ void readAnalogSensors() {
   gas = smoothAnalog(PIN_MQ135);
   lux = smoothAnalog(PIN_LDR);
 
-  // Ultrasonik Timeout pendek (30ms)
   digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2);
   digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10);
   digitalWrite(PIN_TRIG, LOW);
@@ -393,7 +391,8 @@ void logicAuto() {
 }
 
 void handleJson() {
-  StaticJsonDocument<1024> doc;
+  // JSON v7: JsonDocument (auto size)
+  JsonDocument doc;
 
   doc["t"] = t;
   doc["h"] = h;
@@ -485,185 +484,88 @@ void handleTelegram(int numNewMessages) {
   }
 }
 
-// ================= HTML SECTION (DI BAWAH) =================
-const char HTML_PAGE[] PROGMEM = R"=====(
-<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Smart Class IoT</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-  <style>
-    :root { --bg: #0f172a; --card: #1e293b; --primary: #6366f1; --text: #f1f5f9; --ok: #10b981; --warn: #f59e0b; --danger: #ef4444; }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-    .container { max-width: 800px; margin: 0 auto; }
-    header { text-align: center; margin-bottom: 30px; }
-    h1 { margin: 0; font-size: 1.8rem; background: linear-gradient(to right, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .status-dot { height: 10px; width: 10px; background-color: var(--ok); border-radius: 50%; display: inline-block; margin-right: 5px; }
+// ================= HTML PART (Raw String yang Aman) =================
+// Memecah menjadi 2 bagian untuk mencegah parser error
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
-    .card { background: var(--card); padding: 20px; border-radius: 16px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.05); }
-    .card h3 { margin: 0 0 10px 0; font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-    .val { font-size: 1.8rem; font-weight: 800; }
-    .unit { font-size: 0.9rem; color: #64748b; font-weight: 400; }
-
-    .controls { margin-top: 20px; display: grid; gap: 10px; }
-    .btn-group { display: flex; gap: 10px; }
-    button { flex: 1; padding: 15px; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; color: white; transition: 0.2s; }
-    .btn-on { background: var(--card); border: 1px solid var(--primary); }
-    .btn-on:hover { background: var(--primary); }
-    .btn-off { background: var(--card); border: 1px solid var(--danger); }
-    .btn-off:hover { background: var(--danger); }
-    .btn-music { background: linear-gradient(135deg, #ec4899, #8b5cf6); border: none; }
-
-    input[type=text], input[type=password], select { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; }
-    .form-card { text-align: left !important; grid-column: span 2; }
-
-    .footer { margin-top: 30px; text-align: center; font-size: 0.8rem; color: #475569; }
-    .alert-box { background: var(--danger); color: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: none; text-align: center; font-weight: bold; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <h1>Smart Class Panel</h1>
-      <div style="margin-top:5px; color:#94a3b8; font-size:0.9rem;">
-        <span class="status-dot" id="dot"></span><span id="status_txt">Online</span> | <span id="ip">Loading...</span> | <span id="time">--:--</span>
-      </div>
-    </header>
-
-    <div id="alert" class="alert-box">⚠️ PERINGATAN: SUHU / GAS BERBAHAYA!</div>
-
-    <div class="grid">
-      <div class="card">
-        <h3>Suhu</h3>
-        <div class="val" id="t">--</div><span class="unit">°C</span>
-      </div>
-      <div class="card">
-        <h3>Kelembaban</h3>
-        <div class="val" id="h">--</div><span class="unit">%</span>
-      </div>
-      <div class="card">
-        <h3>Udara</h3>
-        <div class="val" id="gas">--</div><span class="unit">PPM</span>
-      </div>
-      <div class="card">
-        <h3>Kebisingan</h3>
-        <div class="val" id="db">--</div><span class="unit">dB</span>
-      </div>
-      <div class="card" style="grid-column: span 2;">
-        <h3>Mood Kelas</h3>
-        <div class="val" id="mood" style="color: var(--primary);">Loading...</div>
-      </div>
-
-      <!-- FORM WIFI & TELEGRAM -->
-      <div class="card form-card">
-        <h3>⚙️ Pengaturan Koneksi</h3>
-        <form action="/save" method="POST">
-          <label>Pilih WiFi:</label>
-          <div style="display:flex; gap:5px;">
-            <select id="ssid_list" name="ssid">
-              <option value="" disabled selected>-- Scan Dulu --</option>
-            </select>
-            <button type="button" onclick="scanWifi()" style="width:100px; padding:10px; background:#6366f1;">🔄 Scan</button>
-          </div>
-
-          <input type="text" id="ssid_manual" name="ssid_manual" placeholder="Atau ketik nama WiFi manual..." style="margin-top:-10px;">
-
-          <label>WiFi Password:</label>
-          <input type="password" name="pass" placeholder="Password WiFi">
-
-          <label>Bot Token:</label>
-          <input type="text" name="bot" placeholder="Telegram Bot Token">
-
-          <label>Chat ID Admin:</label>
-          <input type="text" name="id" placeholder="ID Admin Telegram">
-
-          <button type="submit" class="btn-on" style="background:#10b981; width:100%;">SIMPAN & RESTART ALAT</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="controls">
-      <div class="btn-group">
-        <button onclick="cmd('fan_toggle')" class="btn-on">KIPAS <span id="s_fan">●</span></button>
-        <button onclick="cmd('lamp_toggle')" class="btn-on">LAMPU <span id="s_lamp">●</span></button>
-      </div>
-      <button onclick="cmd('auto_toggle')" style="background:#334155;">MODE OTOMATIS: <span id="s_auto">ON</span></button>
-      <div class="btn-group">
-        <button onclick="cmd('music_play')" class="btn-music">♫ PLAY ZELDA</button>
-        <button onclick="cmd('music_stop')" class="btn-off">■ STOP</button>
-      </div>
-    </div>
-
-    <div class="footer">
-      <a href="/csv" style="color:var(--primary); text-decoration:none;">📥 Download Laporan Excel (.csv)</a>
-    </div>
-  </div>
-
-  <script>
-    function update() {
-      // ANTI-CACHE: Tambahkan timestamp agar browser selalu ambil data baru
-      fetch('/data?_=' + Date.now())
-        .then(r => r.json())
-        .then(d => {
-          document.getElementById('t').innerText = d.t.toFixed(1);
-          document.getElementById('h').innerText = d.h.toFixed(0);
-          document.getElementById('gas').innerText = d.gas;
-          document.getElementById('db').innerText = d.db.toFixed(1);
-          document.getElementById('mood').innerText = d.mood;
-          document.getElementById('ip').innerText = window.location.hostname;
-          document.getElementById('time').innerText = d.time;
-
-          document.getElementById('s_fan').style.color = d.fan ? '#10b981' : '#64748b';
-          document.getElementById('s_lamp').style.color = d.lamp ? '#10b981' : '#64748b';
-          document.getElementById('s_auto').innerText = d.auto ? "ON" : "MANUAL";
-
-          if(d.alert) {
-            document.getElementById('alert').style.display = 'block';
-          } else {
-            document.getElementById('alert').style.display = 'none';
-          }
-
-          document.getElementById('dot').style.backgroundColor = '#10b981';
-          document.getElementById('status_txt').innerText = "Online";
-        })
-        .catch(err => {
-          console.log("Koneksi Error:", err);
-          document.getElementById('dot').style.backgroundColor = '#ef4444';
-          document.getElementById('status_txt').innerText = "Terputus...";
-        });
-    }
-
-    function scanWifi() {
-      var sel = document.getElementById('ssid_list');
-      sel.innerHTML = "<option>Scanning...</option>";
-      fetch('/scan')
-        .then(r => r.json())
-        .then(data => {
-          sel.innerHTML = "";
-          if(data.length === 0) {
-            sel.innerHTML = "<option>Tidak ada WiFi ditemukan</option>";
-          } else {
-            data.forEach(ssid => {
-              var opt = document.createElement('option');
-              opt.value = ssid;
-              opt.innerText = ssid;
-              sel.appendChild(opt);
-            });
-          }
-        })
-        .catch(e => {
-          sel.innerHTML = "<option>Gagal Scan</option>";
-        });
-    }
-
-    function cmd(act) { fetch('/cmd?do='+act).then(update); }
-
-    // UPDATE LEBIH CEPAT (1 DETIK)
-    setInterval(update, 1000);
-    update();
-  </script>
-</body>
-</html>
+const char HTML_HEAD[] PROGMEM = R"=====(
+<!DOCTYPE html><html lang="id"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Class IoT</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root { --bg: #0f172a; --card: #1e293b; --primary: #6366f1; --text: #f1f5f9; --ok: #10b981; --warn: #f59e0b; --danger: #ef4444; }
+body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+.container { max-width: 800px; margin: 0 auto; }
+header { text-align: center; margin-bottom: 30px; }
+h1 { margin: 0; font-size: 1.8rem; background: linear-gradient(to right, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.status-dot { height: 10px; width: 10px; background-color: var(--ok); border-radius: 50%; display: inline-block; margin-right: 5px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
+.card { background: var(--card); padding: 20px; border-radius: 16px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.05); }
+.card h3 { margin: 0 0 10px 0; font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+.val { font-size: 1.8rem; font-weight: 800; }
+.unit { font-size: 0.9rem; color: #64748b; font-weight: 400; }
+.controls { margin-top: 20px; display: grid; gap: 10px; }
+.btn-group { display: flex; gap: 10px; }
+button { flex: 1; padding: 15px; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; color: white; transition: 0.2s; }
+.btn-on { background: var(--card); border: 1px solid var(--primary); }
+.btn-on:hover { background: var(--primary); }
+.btn-off { background: var(--card); border: 1px solid var(--danger); }
+.btn-off:hover { background: var(--danger); }
+.btn-music { background: linear-gradient(135deg, #ec4899, #8b5cf6); border: none; }
+input[type=text], input[type=password], select { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; }
+.form-card { text-align: left !important; grid-column: span 2; }
+.footer { margin-top: 30px; text-align: center; font-size: 0.8rem; color: #475569; }
+.alert-box { background: var(--danger); color: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: none; text-align: center; font-weight: bold; }
+</style></head>
 )=====";
+
+const char HTML_BODY[] PROGMEM = R"=====(
+<body>
+<div class="container">
+<header><h1>Smart Class Panel</h1><div style="margin-top:5px; color:#94a3b8; font-size:0.9rem;"><span class="status-dot" id="dot"></span><span id="status_txt">Online</span> | <span id="ip">Loading...</span> | <span id="time">--:--</span></div></header>
+<div id="alert" class="alert-box">⚠️ PERINGATAN: SUHU / GAS BERBAHAYA!</div>
+<div class="grid">
+<div class="card"><h3>Suhu</h3><div class="val" id="t">--</div><span class="unit">°C</span></div>
+<div class="card"><h3>Kelembaban</h3><div class="val" id="h">--</div><span class="unit">%</span></div>
+<div class="card"><h3>Udara</h3><div class="val" id="gas">--</div><span class="unit">PPM</span></div>
+<div class="card"><h3>Kebisingan</h3><div class="val" id="db">--</div><span class="unit">dB</span></div>
+<div class="card" style="grid-column: span 2;"><h3>Mood Kelas</h3><div class="val" id="mood" style="color: var(--primary);">Loading...</div></div>
+<div class="card form-card"><h3>⚙️ Pengaturan Koneksi</h3><form action="/save" method="POST">
+<label>Pilih WiFi:</label><div style="display:flex; gap:5px;"><select id="ssid_list" name="ssid"><option value="" disabled selected>-- Scan Dulu --</option></select><button type="button" onclick="scanWifi()" style="width:100px; padding:10px; background:#6366f1;">🔄 Scan</button></div>
+<input type="text" id="ssid_manual" name="ssid_manual" placeholder="Atau ketik nama WiFi manual..." style="margin-top:-10px;">
+<label>WiFi Password:</label><input type="password" name="pass" placeholder="Password WiFi">
+<label>Bot Token:</label><input type="text" name="bot" placeholder="Telegram Bot Token">
+<label>Chat ID Admin:</label><input type="text" name="id" placeholder="ID Admin Telegram">
+<button type="submit" class="btn-on" style="background:#10b981; width:100%;">SIMPAN & RESTART ALAT</button></form></div></div>
+<div class="controls"><div class="btn-group"><button onclick="cmd('fan_toggle')" class="btn-on">KIPAS <span id="s_fan">●</span></button><button onclick="cmd('lamp_toggle')" class="btn-on">LAMPU <span id="s_lamp">●</span></button></div>
+<button onclick="cmd('auto_toggle')" style="background:#334155;">MODE OTOMATIS: <span id="s_auto">ON</span></button>
+<div class="btn-group"><button onclick="cmd('music_play')" class="btn-music">♫ PLAY ZELDA</button><button onclick="cmd('music_stop')" class="btn-off">■ STOP</button></div></div>
+<div class="footer"><a href="/csv" style="color:var(--primary); text-decoration:none;">📥 Download Laporan Excel (.csv)</a></div></div>
+<script>
+function update(){fetch('/data?_='+Date.now()).then(r=>r.json()).then(d=>{
+document.getElementById('t').innerText=d.t.toFixed(1);document.getElementById('h').innerText=d.h.toFixed(0);
+document.getElementById('gas').innerText=d.gas;document.getElementById('db').innerText=d.db.toFixed(1);
+document.getElementById('mood').innerText=d.mood;document.getElementById('ip').innerText=window.location.hostname;
+document.getElementById('time').innerText=d.time;
+document.getElementById('s_fan').style.color=d.fan?'#10b981':'#64748b';document.getElementById('s_lamp').style.color=d.lamp?'#10b981':'#64748b';
+document.getElementById('s_auto').innerText=d.auto?"ON":"MANUAL";
+if(d.alert)document.getElementById('alert').style.display='block';else document.getElementById('alert').style.display='none';
+document.getElementById('dot').style.backgroundColor='#10b981';document.getElementById('status_txt').innerText="Online";
+}).catch(e=>{console.log(e);document.getElementById('dot').style.backgroundColor='#ef4444';document.getElementById('status_txt').innerText="Terputus...";});}
+function scanWifi(){var s=document.getElementById('ssid_list');s.innerHTML="<option>Scanning...</option>";fetch('/scan').then(r=>r.json()).then(d=>{s.innerHTML="";if(d.length===0)s.innerHTML="<option>No WiFi</option>";else d.forEach(x=>{var o=document.createElement('option');o.value=x;o.innerText=x;s.appendChild(o);});}).catch(e=>{s.innerHTML="<option>Error</option>";});}
+function cmd(a){fetch('/cmd?do='+a).then(update);}
+setInterval(update,1000);update();
+</script></body></html>
+)=====";
+
+// Handler Root Menggabungkan HEAD + BODY
+void handleRoot() {
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html", "");
+  server.sendContent(HTML_HEAD);
+  server.sendContent(HTML_BODY);
+  server.sendContent("");
+}
