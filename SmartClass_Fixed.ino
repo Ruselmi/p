@@ -347,9 +347,10 @@ void readSensors() {
   // FIX: Sensor Analog Mentok -> Kita hanya percaya Digital Output (DO) untuk Alert
   bool warmup_done = (millis() > 60000);
 
-  // Alert jika DO detect LOW (Detection)
-  // Analog hanya untuk display, tidak trigger alert karena sering mentok (4095)
-  bool gas_alert = (gas_dig == LOW);
+  // Alert jika DO detect HIGH (UPDATE: User report "kebalik", so changing to Active HIGH)
+  // Check your module: If LED ON when gas detected, check if pin goes LOW or HIGH.
+  // Previously LOW, now trying HIGH based on feedback.
+  bool gas_alert = (gas_dig == HIGH);
 
   // MQ2 Analog Threshold (Tuning: 3500 is high, preventing false pos)
   bool smoke_alert = (mq2_val > 3500);
@@ -380,9 +381,8 @@ void logicAuto() {
   else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
 
   // Logic: Lux < 500 OR LDR Digital Trigger -> Lamp ON
-  // Assuming LDR DO goes LOW when Dark (or HIGH depending on module), usually adjustable.
-  // We use Analog priority, but Digital as backup if Analog fails/drifts
-  if (lux < 500 || ldr_dig == HIGH) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
+  // UPDATE: Inverted LDR Digital Logic based on feedback (Active LOW = Dark)
+  if (lux < 500 || ldr_dig == LOW) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
   else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
 }
 
