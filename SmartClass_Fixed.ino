@@ -27,6 +27,7 @@
 #define PIN_LAMP        2
 #define PIN_LDR         34 // ADC1
 #define PIN_MQ135       35 // ADC1 (Air Quality)
+#define PIN_MQ_DO       27 // Digital Output from MQ Sensor (Data Pendukung)
 #define PIN_MQ2         33 // ADC1 (Smoke/Cigarette)
 #define PIN_SOUND       32 // ADC1
 #define PIN_TRIG        5
@@ -57,6 +58,7 @@ String chat_id   = "6383896382";
 // Data
 float t = 0, h = 0, dist = 0, db = 0;
 int gas = 0, lux = 0, mq2_val = 0;
+int gas_dig = 1; // 1 = Aman, 0 = Detect (active low usually)
 bool st_fan = false, st_lamp = false, mode_auto = true;
 bool ai_mode = false;
 String mood = "Netral";
@@ -218,6 +220,7 @@ void setup() {
   pinMode(PIN_LAMP, OUTPUT);
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
+  pinMode(PIN_MQ_DO, INPUT);
 
   // LEDC Setup
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
@@ -311,16 +314,19 @@ void readSensors() {
   if(!isnan(_h)) h = _h;
 
   gas = analogRead(PIN_MQ135);
-  mq2_val = analogRead(PIN_MQ2); // Fixed MQ2 reading
+  gas_dig = digitalRead(PIN_MQ_DO); // Baca data digital pendukung
+  mq2_val = analogRead(PIN_MQ2);
   lux = analogRead(PIN_LDR);
   int raw_sound = analogRead(PIN_SOUND);
   db = (raw_sound / 4095.0) * 100.0; // Calibration rough
 
-  // Safety Logic (Gas/Smoke)
-  if (gas > 2500 || mq2_val > 2500) {
+  // Safety Logic (Gas/Smoke) - Cek Analog ATAU Digital (Low = Detect biasanya)
+  bool gas_alert = (gas > 2500) || (gas_dig == LOW);
+
+  if (gas_alert || mq2_val > 2500) {
     if (WiFi.status() == WL_CONNECTED) {
         String alert = "⚠️ BAHAYA: ";
-        if (gas > 2500) alert += "Udara Buruk (" + String(gas) + ") ";
+        if (gas_alert) alert += "Gas/Udara Buruk (" + String(gas) + "/" + (gas_dig?"HIGH":"LOW") + ") ";
         if (mq2_val > 2500) alert += "Asap/Rokok (" + String(mq2_val) + ")";
         bot.sendMessage(chat_id, alert, "");
     }
@@ -433,6 +439,7 @@ void handleJson() {
   json += "\"t\":" + String(t) + ",";
   json += "\"h\":" + String(h) + ",";
   json += "\"gas\":" + String(gas) + ",";
+  json += "\"gas_dig\":" + String(gas_dig) + ",";
   json += "\"mq2\":" + String(mq2_val) + ",";
   json += "\"db\":" + String(db) + ",";
   json += "\"fan\":" + String(st_fan) + ",";
