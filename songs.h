@@ -409,6 +409,108 @@ const int bell2_tempo[] PROGMEM = { 4, 4, 2 };
 const int bell3_melody[] PROGMEM = { NOTE_C6, NOTE_G5, NOTE_E5, NOTE_C5 }; // End
 const int bell3_tempo[] PROGMEM = { 4, 4, 4, 2 };
 
+// 27. INDONESIA RAYA (NEW)
+const int song27_melody[] PROGMEM = {
+  NOTE_G4, NOTE_A4, NOTE_G4, NOTE_E4, NOTE_G4,
+  NOTE_C5, NOTE_E5, NOTE_D5, NOTE_C5,
+  NOTE_B4, NOTE_A4, NOTE_B4, NOTE_A4, NOTE_G4,
+  NOTE_F4, NOTE_E4, NOTE_F4, NOTE_D4
+};
+const int song27_tempo[] PROGMEM = {
+  8, 8, 4, 4, 4,
+  4, 2, 4, 4,
+  4, 4, 4, 4, 4,
+  4, 4, 4, 4
+};
+
+// 28. HALO HALO BANDUNG (NEW)
+const int song28_melody[] PROGMEM = {
+  NOTE_G4, NOTE_B4, NOTE_D5, NOTE_D5, NOTE_B4, NOTE_G4, NOTE_D4,
+  NOTE_G4, NOTE_B4, NOTE_A4, NOTE_B4, NOTE_G4
+};
+const int song28_tempo[] PROGMEM = {
+  4, 4, 2, 4, 4, 4, 4,
+  4, 4, 4, 4, 2
+};
+
+// 29. GUNDUL PACUL (NEW)
+const int song29_melody[] PROGMEM = {
+  NOTE_C5, NOTE_E5, NOTE_C5, NOTE_E5, NOTE_F5, NOTE_G5, NOTE_G5,
+  NOTE_B4, NOTE_C5, NOTE_B4, NOTE_C5, NOTE_B4, NOTE_G4
+};
+const int song29_tempo[] PROGMEM = {
+  4, 4, 4, 4, 4, 2, 2,
+  4, 4, 4, 4, 4, 2
+};
+
+// 30. AYAYAYA / BUTTERFLY (TOY PHONE) (NEW)
+const int song30_melody[] PROGMEM = {
+  NOTE_F5, NOTE_E5, NOTE_F5, NOTE_E5, NOTE_F5, NOTE_E5, NOTE_F5, NOTE_A5, NOTE_G5, NOTE_F5, NOTE_E5, NOTE_D5, NOTE_C5,
+  NOTE_F5, NOTE_E5, NOTE_F5, NOTE_E5, NOTE_F5, NOTE_A5, NOTE_G5, NOTE_F5
+};
+const int song30_tempo[] PROGMEM = {
+  8, 8, 8, 8, 8, 8, 8, 4, 4, 8, 8, 4, 4,
+  8, 8, 8, 8, 8, 4, 4, 2
+};
+
+// 31. MARIO BROS LONG (NEW)
+const int song31_melody[] PROGMEM = {
+  NOTE_E5, NOTE_E5, REST, NOTE_E5, REST, NOTE_C5, NOTE_E5, REST,
+  NOTE_G5, REST, NOTE_G4, REST,
+  NOTE_C5, NOTE_G4, REST, NOTE_E4,
+  NOTE_A4, NOTE_B4, NOTE_AS4, NOTE_A4,
+  NOTE_G4, NOTE_E5, NOTE_G5, NOTE_A5, NOTE_F5, NOTE_G5,
+  REST, NOTE_E5, NOTE_C5, NOTE_D5, NOTE_B4,
+  NOTE_C5, NOTE_G4, REST, NOTE_E4,
+  NOTE_A4, NOTE_B4, NOTE_AS4, NOTE_A4
+};
+const int song31_tempo[] PROGMEM = {
+  8, 8, 8, 8, 8, 8, 8, 8,
+  4, 4, 4, 4,
+  4, 8, 4, 4,
+  4, 4, 8, 4,
+  8, 8, 8, 4, 8, 8,
+  8, 4, 8, 8, 4,
+  4, 8, 4, 4,
+  4, 4, 8, 4
+};
+
+// 32. TOKEN LISTRIK (BIP BIP) (NEW)
+const int song32_melody[] PROGMEM = {
+  NOTE_B5, REST, NOTE_B5, REST, NOTE_B5, REST
+};
+const int song32_tempo[] PROGMEM = {
+  8, 8, 8, 8, 8, 8
+};
+
+// 33. AMBULANCE (NEW)
+const int song33_melody[] PROGMEM = {
+  NOTE_C6, NOTE_G5, NOTE_C6, NOTE_G5, NOTE_C6, NOTE_G5, NOTE_C6, NOTE_G5,
+  NOTE_C6, NOTE_G5, NOTE_C6, NOTE_G5, NOTE_C6, NOTE_G5, NOTE_C6, NOTE_G5
+};
+const int song33_tempo[] PROGMEM = {
+  4, 4, 4, 4, 4, 4, 4, 4,
+  4, 4, 4, 4, 4, 4, 4, 4
+};
+
+// 34. POLICE SIREN (NEW)
+const int song34_melody[] PROGMEM = {
+  NOTE_A5, NOTE_F6, NOTE_A5, NOTE_F6, NOTE_A5, NOTE_F6, NOTE_A5, NOTE_F6,
+  NOTE_A5, NOTE_F6, NOTE_A5, NOTE_F6
+};
+const int song34_tempo[] PROGMEM = {
+  8, 8, 8, 8, 8, 8, 8, 8,
+  8, 8, 8, 8
+};
+
+// 35. NYAN CAT (NEW)
+const int song35_melody[] PROGMEM = {
+  NOTE_DS5, NOTE_E5, NOTE_FS5, NOTE_B5, NOTE_E5, NOTE_DS5, NOTE_E5, NOTE_FS5, NOTE_B5, NOTE_DS6, NOTE_E6, NOTE_DS6, NOTE_AS5, NOTE_B5, NOTE_FS5, NOTE_DS5, NOTE_E5, NOTE_FS5, NOTE_B5, NOTE_CS6, NOTE_AS5, NOTE_B5, NOTE_CS6, NOTE_E6, NOTE_DS6, NOTE_E6, NOTE_CS6
+};
+const int song35_tempo[] PROGMEM = {
+  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8
+};
+
 
 // ================= SONGS TABLE =================
 
@@ -420,36 +522,43 @@ struct Song {
 };
 
 const Song SONGS[] = {
-  {"Super Mario", song1_melody, song1_tempo, sizeof(song1_melody)/sizeof(int)},
-  {"Zelda Storms", song2_melody, song2_tempo, sizeof(song2_melody)/sizeof(int)},
-  {"Imperial March", song3_melody, song3_tempo, sizeof(song3_melody)/sizeof(int)},
-  {"Happy Birthday", song4_melody, song4_tempo, sizeof(song4_melody)/sizeof(int)},
-  {"Tetris", song5_melody, song5_tempo, sizeof(song5_melody)/sizeof(int)},
-  {"Harry Potter", song6_melody, song6_tempo, sizeof(song6_melody)/sizeof(int)},
-  {"Pink Panther", song7_melody, song7_tempo, sizeof(song7_melody)/sizeof(int)},
-  {"Nokia Ringtone", song8_melody, song8_tempo, sizeof(song8_melody)/sizeof(int)},
-  {"Twinkle Star", song9_melody, song9_tempo, sizeof(song9_melody)/sizeof(int)},
-  {"Jingle Bells", song10_melody, song10_tempo, sizeof(song10_melody)/sizeof(int)},
-  {"Silent Night", song11_melody, song11_tempo, sizeof(song11_melody)/sizeof(int)},
-  {"Take On Me", song12_melody, song12_tempo, sizeof(song12_melody)/sizeof(int)},
-  {"StarWars Cantina", song13_melody, song13_tempo, sizeof(song13_melody)/sizeof(int)},
-  {"Sweet Child", song14_melody, song14_tempo, sizeof(song14_melody)/sizeof(int)},
-  {"Fur Elise", song15_melody, song15_tempo, sizeof(song15_melody)/sizeof(int)},
-  {"Ode to Joy", song16_melody, song16_tempo, sizeof(song16_melody)/sizeof(int)},
-  {"Pirates Caribbean", song17_melody, song17_tempo, sizeof(song17_melody)/sizeof(int)},
-  {"Mission Impossible", song18_melody, song18_tempo, sizeof(song18_melody)/sizeof(int)},
-  {"Indiana Jones", song19_melody, song19_tempo, sizeof(song19_melody)/sizeof(int)},
-  {"James Bond", song20_melody, song20_tempo, sizeof(song20_melody)/sizeof(int)},
-  {"Pokemon Theme", song21_melody, song21_tempo, sizeof(song21_melody)/sizeof(int)},
-  {"Gravity Falls", song22_melody, song22_tempo, sizeof(song22_melody)/sizeof(int)},
-  {"Sherlock", song23_melody, song23_tempo, sizeof(song23_melody)/sizeof(int)},
-  {"Coffin Dance", song24_melody, song24_tempo, sizeof(song24_melody)/sizeof(int)},
-  {"Rick Roll", song25_melody, song25_tempo, sizeof(song25_melody)/sizeof(int)},
-
-  // BELLS (25, 26, 27)
-  {"🔔 School: Entry", bell1_melody, bell1_tempo, sizeof(bell1_melody)/sizeof(int)},
-  {"🔔 School: Break", bell2_melody, bell2_tempo, sizeof(bell2_melody)/sizeof(int)},
-  {"🔔 School: End", bell3_melody, bell3_tempo, sizeof(bell3_melody)/sizeof(int)}
+  {"1. Super Mario", song1_melody, song1_tempo, sizeof(song1_melody)/sizeof(int)},
+  {"2. Zelda Storms", song2_melody, song2_tempo, sizeof(song2_melody)/sizeof(int)},
+  {"3. Imperial March", song3_melody, song3_tempo, sizeof(song3_melody)/sizeof(int)},
+  {"4. Happy Birthday", song4_melody, song4_tempo, sizeof(song4_melody)/sizeof(int)},
+  {"5. Tetris", song5_melody, song5_tempo, sizeof(song5_melody)/sizeof(int)},
+  {"6. Harry Potter", song6_melody, song6_tempo, sizeof(song6_melody)/sizeof(int)},
+  {"7. Pink Panther", song7_melody, song7_tempo, sizeof(song7_melody)/sizeof(int)},
+  {"8. Nokia Ringtone", song8_melody, song8_tempo, sizeof(song8_melody)/sizeof(int)},
+  {"9. Twinkle Star", song9_melody, song9_tempo, sizeof(song9_melody)/sizeof(int)},
+  {"10. Jingle Bells", song10_melody, song10_tempo, sizeof(song10_melody)/sizeof(int)},
+  {"11. Silent Night", song11_melody, song11_tempo, sizeof(song11_melody)/sizeof(int)},
+  {"12. Take On Me", song12_melody, song12_tempo, sizeof(song12_melody)/sizeof(int)},
+  {"13. StarWars Cantina", song13_melody, song13_tempo, sizeof(song13_melody)/sizeof(int)},
+  {"14. Sweet Child", song14_melody, song14_tempo, sizeof(song14_melody)/sizeof(int)},
+  {"15. Fur Elise", song15_melody, song15_tempo, sizeof(song15_melody)/sizeof(int)},
+  {"16. Ode to Joy", song16_melody, song16_tempo, sizeof(song16_melody)/sizeof(int)},
+  {"17. Pirates Caribbean", song17_melody, song17_tempo, sizeof(song17_melody)/sizeof(int)},
+  {"18. Mission Impossible", song18_melody, song18_tempo, sizeof(song18_melody)/sizeof(int)},
+  {"19. Indiana Jones", song19_melody, song19_tempo, sizeof(song19_melody)/sizeof(int)},
+  {"20. James Bond", song20_melody, song20_tempo, sizeof(song20_melody)/sizeof(int)},
+  {"21. Pokemon Theme", song21_melody, song21_tempo, sizeof(song21_melody)/sizeof(int)},
+  {"22. Gravity Falls", song22_melody, song22_tempo, sizeof(song22_melody)/sizeof(int)},
+  {"23. Sherlock", song23_melody, song23_tempo, sizeof(song23_melody)/sizeof(int)},
+  {"24. Coffin Dance", song24_melody, song24_tempo, sizeof(song24_melody)/sizeof(int)},
+  {"25. Rick Roll", song25_melody, song25_tempo, sizeof(song25_melody)/sizeof(int)},
+  {"🔔 26. Entry", bell1_melody, bell1_tempo, sizeof(bell1_melody)/sizeof(int)},
+  {"🔔 27. Break", bell2_melody, bell2_tempo, sizeof(bell2_melody)/sizeof(int)},
+  {"🔔 28. End", bell3_melody, bell3_tempo, sizeof(bell3_melody)/sizeof(int)},
+  {"29. Indonesia Raya", song27_melody, song27_tempo, sizeof(song27_melody)/sizeof(int)},
+  {"30. Halo Halo Bdg", song28_melody, song28_tempo, sizeof(song28_melody)/sizeof(int)},
+  {"31. Gundul Pacul", song29_melody, song29_tempo, sizeof(song29_melody)/sizeof(int)},
+  {"32. Butterfly/Ayaya", song30_melody, song30_tempo, sizeof(song30_melody)/sizeof(int)},
+  {"33. Mario Long", song31_melody, song31_tempo, sizeof(song31_melody)/sizeof(int)},
+  {"34. Token Habis", song32_melody, song32_tempo, sizeof(song32_melody)/sizeof(int)},
+  {"35. Ambulance", song33_melody, song33_tempo, sizeof(song33_melody)/sizeof(int)},
+  {"36. Police Siren", song34_melody, song34_tempo, sizeof(song34_melody)/sizeof(int)},
+  {"37. Nyan Cat", song35_melody, song35_tempo, sizeof(song35_melody)/sizeof(int)}
 };
 
 #endif

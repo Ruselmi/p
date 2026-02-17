@@ -6,43 +6,76 @@ const char HTML_HEAD[] PROGMEM = R"=====(
 <html lang="id">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Smart Class Health</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <title>Smart Class Ultimate</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
   <style>
-    :root { --bg: #0f172a; --card: #1e293b; --primary: #6366f1; --text: #f1f5f9; --ok: #10b981; --warn: #f59e0b; --danger: #ef4444; }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+    /* Modern Glassmorphism & Minimalist Design */
+    :root {
+      --bg: #0f172a; --card: rgba(30, 41, 59, 0.7);
+      --primary: #6366f1; --text: #f8fafc; --ok: #10b981; --warn: #f59e0b; --danger: #ef4444;
+    }
+    body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; -webkit-font-smoothing: antialiased; }
     .container { max-width: 800px; margin: 0 auto; }
-    header { text-align: center; margin-bottom: 20px; }
-    h1 { margin: 0; font-size: 1.8rem; background: linear-gradient(to right, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .status-dot { height: 10px; width: 10px; background-color: var(--ok); border-radius: 50%; display: inline-block; margin-right: 5px; }
 
+    header { text-align: center; margin-bottom: 25px; }
+    h1 { margin: 0; font-size: 2rem; background: linear-gradient(135deg, #a855f7, #6366f1); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .status-bar { font-size: 0.8rem; color: #94a3b8; margin-top: 5px; display: flex; justify-content: center; gap: 10px; }
+
+    /* Grid Layout */
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
-    .card { background: var(--card); padding: 15px; border-radius: 16px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.05); }
-    .card h3 { margin: 0 0 5px 0; font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-    .val { font-size: 1.5rem; font-weight: 800; }
-    .unit { font-size: 0.8rem; color: #64748b; font-weight: 400; }
-    .ref { font-size: 0.7rem; color: #94a3b8; margin-top:5px; display:block; text-decoration: none; border-top: 1px solid #334155; padding-top: 5px; }
-    .ref:hover { text-decoration: underline; color: var(--primary); }
 
-    .controls { margin-top: 20px; display: grid; gap: 10px; }
-    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
-    button { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; color: white; transition: 0.2s; min-width: 100px; }
-    .btn-on { background: var(--card); border: 1px solid var(--primary); }
-    .btn-on:hover { background: var(--primary); }
-    .btn-off { background: var(--card); border: 1px solid var(--danger); }
-    .btn-off:hover { background: var(--danger); }
+    /* Card Style */
+    .card {
+      background: var(--card); backdrop-filter: blur(10px);
+      padding: 20px; border-radius: 20px; text-align: center;
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: transform 0.2s;
+    }
+    .card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.2); }
 
-    /* PIANO KEYS */
-    .piano-keys { display: flex; gap: 4px; justify-content: center; margin-top: 10px; background: #000; padding: 5px; border-radius: 8px; overflow-x: auto; }
-    .key { width: 30px; height: 80px; background: white; border-radius: 0 0 4px 4px; border: 1px solid #ccc; cursor: pointer; position: relative; }
-    .key:active { background: #eee; transform: scale(0.95); }
-    .key-black { width: 20px; height: 50px; background: black; position: absolute; top: 0; left: -10px; z-index: 2; border-radius: 0 0 3px 3px; }
-    .key-label { position: absolute; bottom: 5px; left: 0; right: 0; text-align: center; font-size: 10px; color: #333; font-weight: bold; pointer-events: none; }
+    .card h3 { margin: 0 0 5px 0; font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+    .val { font-size: 1.8rem; font-weight: 800; }
+    .unit { font-size: 0.8rem; color: #64748b; }
 
-    input[type=text], input[type=password], select { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; }
-    .form-card { text-align: left !important; grid-column: span 2; }
-    #wifi-list { max-height: 150px; overflow-y: auto; background: #334155; padding: 10px; border-radius: 8px; display: none; margin-bottom: 10px; }
-    .wifi-item { padding: 5px; cursor: pointer; border-bottom: 1px solid #475569; }
+    .ref { font-size: 0.65rem; color: #64748b; display: block; margin-top: 5px; text-decoration: none; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 5px; }
+    .ref:hover { color: var(--primary); }
+
+    /* Buttons */
+    button {
+      padding: 14px; border: none; border-radius: 14px; font-weight: 600;
+      cursor: pointer; color: white; transition: 0.2s; width: 100%; font-family: inherit;
+    }
+    .btn-on { background: rgba(99, 102, 241, 0.2); border: 1px solid var(--primary); color: var(--primary); }
+    .btn-on:hover, .btn-on.active { background: var(--primary); color: white; }
+
+    .btn-off { background: rgba(239, 68, 68, 0.2); border: 1px solid var(--danger); color: var(--danger); }
+    .btn-off:hover { background: var(--danger); color: white; }
+
+    .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+
+    /* Piano Scrollable */
+    .piano-container { overflow-x: auto; padding-bottom: 10px; margin-top: 10px; }
+    .piano-keys { display: flex; width: max-content; gap: 2px; margin: 0 auto; background: #000; padding: 5px; border-radius: 10px; }
+    .key { width: 34px; height: 100px; background: white; border-radius: 0 0 5px 5px; position: relative; cursor: pointer; }
+    .key:active { background: #e2e8f0; transform: scale(0.98); }
+    .key-black { width: 20px; height: 60px; background: #1e293b; position: absolute; top: 0; left: -10px; z-index: 2; border-radius: 0 0 3px 3px; border: 1px solid #334155; }
+    .key-label { position: absolute; bottom: 5px; width: 100%; text-align: center; color: #333; font-size: 9px; font-weight: bold; pointer-events: none; }
+
+    /* Select Input */
+    select {
+      width: 100%; padding: 12px; border-radius: 12px; background: #334155;
+      color: white; border: 1px solid #475569; font-family: inherit; margin-bottom: 10px;
+    }
+
+    /* Modal / Hidden */
+    #wifi-list { max-height: 150px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 10px; display: none; border: 1px solid #334155; margin-bottom: 10px; }
+    .wifi-item { padding: 8px; border-bottom: 1px solid #1e293b; cursor: pointer; font-size: 0.9rem; }
+    input { width: 100%; padding: 12px; margin: 5px 0 10px 0; background: #1e293b; border: 1px solid #475569; color: white; border-radius: 10px; box-sizing: border-box; }
+
+    .badge { padding: 3px 8px; border-radius: 20px; font-size: 0.7rem; background: #334155; }
+    .badge.ok { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+    .badge.warn { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .badge.err { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
   </style>
 </head>
 <body>
@@ -51,180 +84,204 @@ const char HTML_HEAD[] PROGMEM = R"=====(
 const char HTML_BODY[] PROGMEM = R"=====(
   <div class="container">
     <header>
-      <h1>Smart Class AI Health</h1>
-      <div style="font-size:0.8rem; color:#94a3b8; margin-top:5px;">
-        <span class="status-dot"></span><span id="ip">...</span> | <span id="time">--:--</span>
+      <h1>Smart Class Ultimate</h1>
+      <div class="status-bar">
+        <span><span class="status-dot" style="color:var(--ok);">●</span> Online</span>
+        <span id="ip">...</span>
+        <span id="time">--:--</span>
       </div>
     </header>
 
     <div class="grid">
-      <!-- SENSORS WITH HEALTH STANDARDS -->
+      <!-- MAIN SENSORS -->
       <div class="card">
-        <h3>Suhu (KEMENKES)</h3>
+        <h3>Suhu</h3>
         <div class="val" id="t">--</div><span class="unit">°C</span>
-        <a href="https://peraturan.bpk.go.id/Details/258908/permenkes-no-2-tahun-2023" target="_blank" class="ref">Std: 18-30°C<br>(PMK No.2/2023)</a>
+        <a href="#" class="ref">Std: 18-30°C</a>
       </div>
       <div class="card">
-        <h3>Lembab (KEMENKES)</h3>
+        <h3>Lembab</h3>
         <div class="val" id="h">--</div><span class="unit">%</span>
-        <a href="https://peraturan.bpk.go.id/Details/258908/permenkes-no-2-tahun-2023" target="_blank" class="ref">Std: 40-60%<br>(PMK No.2/2023)</a>
+        <a href="#" class="ref">Std: 40-60%</a>
       </div>
       <div class="card">
-        <h3>Kebisingan (KEPMEN LH)</h3>
+        <h3>Suara</h3>
         <div class="val" id="db">--</div><span class="unit">dB</span>
-        <a href="https://peraturan.go.id/id/kepmen-lh-no-48-tahun-1996" target="_blank" class="ref">Max: 55 dB<br>(KepmenLH 48/1996)</a>
+        <a href="#" class="ref">Max: 55dB</a>
       </div>
       <div class="card">
-        <h3>Kualitas Udara</h3>
+        <h3>Udara</h3>
         <div class="val" id="gas">--</div><span class="unit">PPM</span>
-        <span class="ref">Std: < 1000 PPM<br>(Ventilasi Sehat)</span>
+        <span class="ref">CO2 &lt; 1000</span>
       </div>
 
-      <!-- NEW SENSOR: SMOKE -->
-      <div class="card" style="grid-column: span 2; border-color: var(--danger);">
-        <h3>🚭 Detektor Rokok (MQ-2)</h3>
-        <div class="val" id="mq2" style="color:#f59e0b;">--</div>
-        <div id="smoke_status" style="font-size:0.9rem; font-weight:bold; margin-top:5px;">Scanning...</div>
-      </div>
-
+      <!-- STATUS PANEL -->
       <div class="card" style="grid-column: span 2;">
-        <h3>AI Health Status</h3>
-        <div class="val" id="health" style="color: var(--ok); font-size:1.2rem;">Checking...</div>
-        <div style="font-size:0.8rem; margin-top:5px;" id="ai_status">AI System Active</div>
-      </div>
-    </div>
-
-    <div class="controls">
-      <!-- SCHOOL BELL & AI -->
-      <div class="btn-group">
-        <button onclick="cmd('ai_toggle')" style="background:#334155;">🤖 AI: <span id="s_ai">ON</span></button>
-        <button onclick="cmd('bell_toggle')" style="background:#334155;">🔔 BEL: <span id="s_bell">ON</span></button>
-      </div>
-
-      <!-- MANUAL CONTROLS -->
-      <div class="btn-group">
-        <button onclick="cmd('fan_toggle')" class="btn-on">KIPAS <span id="s_fan">●</span></button>
-        <button onclick="cmd('lamp_toggle')" class="btn-on">LAMPU <span id="s_lamp">●</span></button>
-      </div>
-
-      <!-- MUSIC PLAYER -->
-      <div class="card" style="text-align:left;">
-        <h3>🎵 Music & Bells</h3>
-        <select id="song_select">
-          <optgroup label="🔔 Bel Sekolah">
-            <option value="25">Bel Masuk (07:00)</option>
-            <option value="26">Bel Istirahat (10:00)</option>
-            <option value="27">Bel Pulang (14:00)</option>
-          </optgroup>
-          <optgroup label="🎵 Lagu Hiburan">
-            <option value="0">1. Super Mario Bros</option>
-            <option value="1">2. Zelda: Song of Storms</option>
-            <option value="2">3. Star Wars: Imperial</option>
-            <option value="3">4. Happy Birthday</option>
-            <option value="4">5. Tetris Theme</option>
-            <option value="24">25. Rick Roll</option>
-          </optgroup>
-        </select>
-        <div class="btn-group">
-          <button onclick="playSong()" class="btn-on" style="background:#8b5cf6;">PLAY ▶</button>
-          <button onclick="cmd('music_stop')" class="btn-off">STOP ■</button>
+        <h3>Status Kelas</h3>
+        <div style="display:flex; justify-content:space-around; align-items:center; margin-top:10px;">
+           <div>
+             <div style="font-size:0.8rem; color:#94a3b8;">AI SYSTEM</div>
+             <div id="ai_status" class="badge ok">Active</div>
+           </div>
+           <div>
+             <div style="font-size:0.8rem; color:#94a3b8;">KESEHATAN</div>
+             <div id="health" class="badge ok">Normal</div>
+           </div>
+           <div>
+             <div style="font-size:0.8rem; color:#94a3b8;">ROKOK</div>
+             <div id="mq2_stat" class="badge ok">Aman</div>
+           </div>
         </div>
       </div>
 
-      <!-- PIANO -->
-      <div class="card">
-        <h3>🎹 Mini Piano</h3>
-        <div class="piano-keys">
-          <div class="key" onmousedown="playTone(262)"> <span class="key-label">C</span> </div>
-          <div class="key" onmousedown="playTone(294)"> <span class="key-label">D</span> <div class="key-black" style="left:18px;"></div> </div>
-          <div class="key" onmousedown="playTone(330)"> <span class="key-label">E</span> <div class="key-black" style="left:18px;"></div> </div>
-          <div class="key" onmousedown="playTone(349)"> <span class="key-label">F</span> </div>
-          <div class="key" onmousedown="playTone(392)"> <span class="key-label">G</span> <div class="key-black" style="left:18px;"></div> </div>
-          <div class="key" onmousedown="playTone(440)"> <span class="key-label">A</span> <div class="key-black" style="left:18px;"></div> </div>
-          <div class="key" onmousedown="playTone(494)"> <span class="key-label">B</span> <div class="key-black" style="left:18px;"></div> </div>
-          <div class="key" onmousedown="playTone(523)"> <span class="key-label">C'</span> </div>
+      <!-- CONTROLS -->
+      <div class="card" style="grid-column: span 2; text-align: left;">
+        <h3>🎛️ Quick Control</h3>
+        <div class="btn-group">
+           <button onclick="cmd('ai_toggle')" id="btn_ai" class="btn-on">🤖 AI AUTO</button>
+           <button onclick="cmd('bell_toggle')" id="btn_bell" class="btn-on">🔔 AUTO BEL</button>
+        </div>
+        <div class="btn-group">
+           <button onclick="cmd('fan_toggle')" id="btn_fan" class="btn-on">KIPAS</button>
+           <button onclick="cmd('lamp_toggle')" id="btn_lamp" class="btn-on">LAMPU</button>
+        </div>
+      </div>
+
+      <!-- MUSIC & PIANO -->
+      <div class="card" style="grid-column: span 2; text-align: left;">
+        <h3>🎹 Music Studio (37 Songs)</h3>
+
+        <!-- QUICK SFX -->
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+           <button onclick="playSong(33)" style="background:#f59e0b; padding:8px; font-size:0.8rem;">⚡ TOKEN</button>
+           <button onclick="playSong(34)" style="background:#ef4444; padding:8px; font-size:0.8rem;">🚑 AMBULANCE</button>
+           <button onclick="playSong(35)" style="background:#3b82f6; padding:8px; font-size:0.8rem;">🚓 POLISI</button>
+        </div>
+
+        <select id="song_select">
+          <optgroup label="Lagu Nasional & Daerah">
+            <option value="29">Indonesia Raya</option>
+            <option value="30">Halo Halo Bandung</option>
+            <option value="31">Gundul Pacul</option>
+          </optgroup>
+          <optgroup label="Lagu Populer">
+            <option value="32">Butterfly (Ayayaya)</option>
+            <option value="33">Super Mario Long</option>
+            <option value="37">Nyan Cat</option>
+            <option value="0">Super Mario Short</option>
+            <option value="1">Zelda Storms</option>
+            <option value="2">Star Wars Imperial</option>
+            <option value="24">Rick Roll</option>
+            <option value="23">Coffin Dance</option>
+          </optgroup>
+          <optgroup label="Bel Sekolah">
+            <option value="26">Bel Masuk (07:00)</option>
+            <option value="27">Bel Istirahat (10:00)</option>
+            <option value="28">Bel Pulang (14:00)</option>
+          </optgroup>
+        </select>
+
+        <div class="btn-group">
+          <button onclick="playSong()" class="btn-on" style="background:#8b5cf6;">▶ PLAY</button>
+          <button onclick="cmd('music_stop')" class="btn-off">■ STOP</button>
+        </div>
+
+        <!-- FULL PIANO (C4-C5) -->
+        <div class="piano-container">
+          <div class="piano-keys">
+            <!-- C4 - B4 -->
+            <div class="key" onmousedown="pt(262)"><span class="key-label">C4</span></div>
+            <div class="key" onmousedown="pt(294)"><span class="key-label">D4</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(330)"><span class="key-label">E4</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(349)"><span class="key-label">F4</span></div>
+            <div class="key" onmousedown="pt(392)"><span class="key-label">G4</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(440)"><span class="key-label">A4</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(494)"><span class="key-label">B4</span><div class="key-black"></div></div>
+            <!-- C5 - B5 -->
+            <div class="key" onmousedown="pt(523)"><span class="key-label">C5</span></div>
+            <div class="key" onmousedown="pt(587)"><span class="key-label">D5</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(659)"><span class="key-label">E5</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(698)"><span class="key-label">F5</span></div>
+            <div class="key" onmousedown="pt(784)"><span class="key-label">G5</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(880)"><span class="key-label">A5</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(988)"><span class="key-label">B5</span><div class="key-black"></div></div>
+            <div class="key" onmousedown="pt(1047)"><span class="key-label">C6</span></div>
+          </div>
         </div>
       </div>
 
       <!-- SETTINGS -->
-      <div class="card form-card">
-        <h3>⚙️ Settings</h3>
-        <form action="/save" method="POST">
-          <div style="display:flex; gap:5px;">
-             <input type="text" name="ssid" id="ssid" placeholder="WiFi SSID" readonly required>
-             <button type="button" onclick="scanWifi()" style="width:80px; background:#6366f1;">SCAN</button>
-          </div>
-          <div id="wifi-list">Scanning...</div>
-          <input type="text" name="ssid_manual" placeholder="Manual SSID">
-          <input type="password" name="pass" placeholder="WiFi Password">
-          <input type="text" name="bot" placeholder="Telegram Bot Token">
-          <input type="text" name="id" placeholder="Chat ID Admin">
-          <button type="submit" class="btn-on" style="background:#10b981; width:100%;">SAVE & RESTART</button>
-        </form>
+      <div class="card" style="grid-column: span 2; text-align:left;">
+        <h3 onclick="document.getElementById('set_form').style.display='block'" style="cursor:pointer;">⚙️ Settings (Click to Expand)</h3>
+        <div id="set_form" style="display:none; margin-top:10px;">
+          <form action="/save" method="POST">
+             <div style="display:flex; gap:5px;">
+                <input type="text" name="ssid" id="ssid" placeholder="WiFi SSID" readonly>
+                <button type="button" onclick="scanWifi()" style="width:80px; background:#6366f1;">SCAN</button>
+             </div>
+             <div id="wifi-list">Scanning...</div>
+             <input type="text" name="ssid_manual" placeholder="Manual SSID">
+             <input type="password" name="pass" placeholder="Password">
+             <input type="text" name="bot" placeholder="Bot Token">
+             <input type="text" name="id" placeholder="Chat ID">
+             <button type="submit" class="btn-on" style="background:#10b981;">SAVE & RESTART</button>
+          </form>
+        </div>
       </div>
+    </div>
+
+    <div style="text-align:center; margin-top:30px; color:#64748b; font-size:0.7rem;">
+      Smart Class Ultimate v4.0 | <a href="/csv" style="color:var(--primary);">Download Log</a>
     </div>
   </div>
 
   <script>
+    function pt(f) { fetch('/cmd?do=tone&freq='+f); }
+    function playSong(id) {
+        var s = id !== undefined ? id : document.getElementById('song_select').value;
+        fetch('/cmd?do=music_play&id='+s);
+    }
+    function cmd(a) { fetch('/cmd?do='+a).then(update); }
+
     function update() {
-      fetch('/data?ts=' + new Date().getTime()).then(r => r.json()).then(d => {
-        // Update Values
+      fetch('/data?ts=' + Date.now()).then(r => r.json()).then(d => {
         document.getElementById('t').innerText = d.t.toFixed(1);
         document.getElementById('h').innerText = d.h.toFixed(0);
         document.getElementById('gas').innerText = d.gas;
-        document.getElementById('mq2').innerText = d.mq2;
-        document.getElementById('db').innerText = d.db.toFixed(1);
-        document.getElementById('health').innerText = d.health;
-        document.getElementById('ai_status').innerText = d.ai_stat;
+        document.getElementById('db').innerText = d.db.toFixed(0);
         document.getElementById('time').innerText = d.time;
         document.getElementById('ip').innerText = window.location.hostname;
 
-        // Colors & Status
-        document.getElementById('s_fan').style.color = d.fan ? '#10b981' : '#64748b';
-        document.getElementById('s_lamp').style.color = d.lamp ? '#10b981' : '#64748b';
-        document.getElementById('s_ai').innerText = d.ai ? "ON" : "OFF";
-        document.getElementById('s_bell').innerText = d.bell ? "ON" : "OFF";
+        // Status Badges
+        document.getElementById('ai_status').innerText = d.ai ? "Active" : "Manual";
+        document.getElementById('ai_status').className = d.ai ? "badge ok" : "badge warn";
 
-        // Smoke Alert Visual
-        var smokeEl = document.getElementById('mq2');
-        var smokeStat = document.getElementById('smoke_status');
-        if(d.mq2 > 2000) {
-            smokeEl.style.color = '#ef4444';
-            smokeStat.innerText = "BAHAYA: ADA ASAP!";
-            smokeStat.style.color = '#ef4444';
-        } else {
-            smokeEl.style.color = '#f59e0b';
-            smokeStat.innerText = "Udara Bersih";
-            smokeStat.style.color = '#10b981';
-        }
+        document.getElementById('health').innerText = d.health.includes("OK") ? "Normal" : "Warning";
+        document.getElementById('health').className = d.health.includes("OK") ? "badge ok" : "badge err";
+
+        document.getElementById('mq2_stat').innerText = d.mq2 > 2000 ? "ASAP!" : "Aman";
+        document.getElementById('mq2_stat').className = d.mq2 > 2000 ? "badge err" : "badge ok";
+
+        // Buttons
+        document.getElementById('btn_fan').className = d.fan ? "btn-on active" : "btn-on";
+        document.getElementById('btn_lamp').className = d.lamp ? "btn-on active" : "btn-on";
+        document.getElementById('btn_ai').className = d.ai ? "btn-on active" : "btn-on";
+        document.getElementById('btn_bell').className = d.bell ? "btn-on active" : "btn-on";
       });
     }
 
-    function playSong() {
-      var id = document.getElementById('song_select').value;
-      cmd('music_play&id=' + id);
-    }
-
-    function playTone(freq) { fetch('/cmd?do=tone&freq=' + freq); }
-
     function scanWifi() {
-       var list = document.getElementById('wifi-list');
-       list.style.display = 'block';
-       list.innerHTML = 'Scanning...';
-       fetch('/scan').then(r => r.json()).then(data => {
-          if(data.status === "scanning") { setTimeout(scanWifi, 1000); return; }
-          list.innerHTML = '';
-          data.forEach(ssid => {
-             var div = document.createElement('div');
-             div.className = 'wifi-item';
-             div.innerText = ssid;
-             div.onclick = function() { document.getElementById('ssid').value = ssid; list.style.display='none'; };
-             list.appendChild(div);
+       var l = document.getElementById('wifi-list'); l.style.display='block'; l.innerHTML='Scanning...';
+       fetch('/scan').then(r=>r.json()).then(d=>{
+          if(d.status==="scanning"){ setTimeout(scanWifi,1000); return; }
+          l.innerHTML='';
+          d.forEach(s=>{
+             var x=document.createElement('div'); x.className='wifi-item'; x.innerText=s;
+             x.onclick=()=>{document.getElementById('ssid').value=s; l.style.display='none';};
+             l.appendChild(x);
           });
-       }).catch(e => { list.innerHTML = 'Error'; });
+       });
     }
-
-    function cmd(act) { fetch('/cmd?do='+act).then(update); }
     setInterval(update, 2000); update();
   </script>
 </body>

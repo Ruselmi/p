@@ -1,11 +1,11 @@
 /*
- * SMART CLASS IOT - HEALTH & SAFETY EDITION (Multi File)
+ * SMART CLASS IOT - ULTIMATE EDITION (Multi File)
  * Board: ESP32 Dev Module
  * Fitur:
  * - Monitoring: Suhu, Lembab, Gas (MQ135), Asap/Rokok (MQ2), Suara, Cahaya, Jarak
  * - Health Standards: WHO & Kemenkes Compliance Check
  * - School Bell: Auto-Schedule (Entry, Break, End)
- * - Telegram Bot, Web Dashboard, Music Player, AI Logic
+ * - Telegram Bot, Web Dashboard, Music Player (37 Songs), AI Logic
  */
 
 #include <WiFi.h>
@@ -17,8 +17,8 @@
 #include <Preferences.h>
 #include <time.h>
 
-#include "index.h"  // Web Dashboard (Updated with Health Refs)
-#include "songs.h"  // 25 Melodies + School Bells
+#include "index.h"  // Web Dashboard (Glassmorphism & Piano)
+#include "songs.h"  // 37 Melodies + Bells
 
 // ================= PIN CONFIGURATION =================
 #define PIN_DHT         18
@@ -282,22 +282,22 @@ void checkBellSchedule() {
 
   // Schedule (Mon-Fri assumed)
   if (current_hour == 7 && current_minute == 0) {
-    playSong(25); // Entry Bell
+    playSong(26); // Entry Bell
     bot.sendMessage(chat_id, "🔔 Bel Masuk (07:00)", "");
   }
   else if (current_hour == 10 && current_minute == 0) {
-    playSong(26); // Break Bell
+    playSong(27); // Break Bell
     bot.sendMessage(chat_id, "🔔 Bel Istirahat (10:00)", "");
   }
   else if (current_hour == 14 && current_minute == 0) {
-    playSong(27); // End Bell
+    playSong(28); // End Bell
     bot.sendMessage(chat_id, "🔔 Bel Pulang (14:00)", "");
   }
 }
 
 // ================= MUSIC ENGINE =================
 void playSong(int id) {
-  if (id < 0 || id > 27) return;
+  if (id < 0 || id > 37) return; // Limit 37
   current_song_id = id;
   is_playing = true;
   note_index = 0;
@@ -371,10 +371,10 @@ void handleTelegram(int n) {
     String cid = bot.messages[i].chat_id;
 
     if (txt == "/start") {
-      String msg = "🤖 *Smart Class Bot*\n";
-      msg += "/status - Cek Kesehatan Kelas\n";
+      String msg = "🤖 *Smart Class Ultimate*\n";
+      msg += "/status - Cek Kesehatan\n";
       msg += "/ai [on/off] - Mode Otomatis\n";
-      msg += "/music [0-27] - Putar Lagu/Bel\n";
+      msg += "/music [0-37] - Putar Lagu\n";
       msg += "/stop - Matikan Suara";
       bot.sendMessage(cid, msg, "Markdown");
     }
