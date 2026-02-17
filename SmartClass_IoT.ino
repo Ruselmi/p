@@ -10,6 +10,11 @@
  * - AUDIO: PWM LEDC system (ledcWriteTone) optimized.
  * - PIN: Buzzer updated to 26.
  * - SOUND: Startup (Mario) & Default (Zelda).
+ *
+ * NEW FEATURES:
+ * - NTP Time: Auto-Sync Waktu (WIB UTC+7).
+ * - JADWAL OTOMATIS: Sistem hanya aktif jam 07:00 - 17:00 (Hemat Energi).
+ * - NOTIFIKASI BAHAYA: Kirim Telegram jika Gas > 2500 atau Suhu > 35°C.
  */
 
 #include <WiFi.h>
@@ -19,6 +24,7 @@
 #include <DHT.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <time.h> // Library Waktu bawaan ESP32
 
 // ================= KONFIGURASI PIN =================
 #define PIN_DHT         18
@@ -38,6 +44,12 @@
 
 #define DHTTYPE         DHT22
 
+// ================= KONFIGURASI ALARM & WAKTU =================
+const int GAS_ALARM_LIMIT   = 2500; // Batas Bahaya Gas
+const float TEMP_ALARM_LIMIT = 35.0; // Batas Bahaya Suhu
+const long GMT_OFFSET_SEC   = 25200; // WIB (UTC+7) = 7 * 3600
+const int DAYLIGHT_OFFSET   = 0;
+
 // ================= VARIABEL GLOBAL =================
 DHT dht(PIN_DHT, DHTTYPE);
 WebServer server(80);
@@ -56,11 +68,15 @@ int gas = 0;
 long rssi = 0; // Signal strength
 bool st_fan = false, st_lamp = false, mode_auto = true;
 String mood = "Netral";
+String time_str = "--:--"; // String jam
+bool is_day_time = true;   // Status siang/malam
+bool alert_active = false; // Status bahaya
 
 // Timer variables
 unsigned long last_sensor = 0;
 unsigned long last_bot = 0;
 unsigned long last_wifi_check = 0;
+unsigned long last_alert_time = 0; // Anti-spam notif
 
 // ================= MUSIK (DEFINISI NADA) =================
 #define NOTE_G3  196
@@ -107,6 +123,8 @@ void handleMusic();
 void handleTelegram(int numNewMessages);
 void checkWiFi();
 int smoothAnalog(int pin);
+void updateTime();
+void checkAlert();
 
 // ================= WEB DASHBOARD =================
 const char HTML_PAGE[] PROGMEM = R"=====(
@@ -143,6 +161,7 @@ const char HTML_PAGE[] PROGMEM = R"=====(
     .form-card { text-align: left !important; grid-column: span 2; }
 
     .footer { margin-top: 30px; text-align: center; font-size: 0.8rem; color: #475569; }
+    .alert-box { background: var(--danger); color: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: none; text-align: center; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -150,9 +169,11 @@ const char HTML_PAGE[] PROGMEM = R"=====(
     <header>
       <h1>Smart Class Panel</h1>
       <div style="margin-top:5px; color:#94a3b8; font-size:0.9rem;">
-        <span class="status-dot"></span>Online | <span id="ip">Loading...</span> | Signal: <span id="rssi">--</span> dBm
+        <span class="status-dot"></span>Online | <span id="ip">Loading...</span> | <span id="time">--:--</span>
       </div>
     </header>
+
+    <div id="alert" class="alert-box">⚠️ PERINGATAN: SUHU / GAS BERBAHAYA!</div>
 
     <div class="grid">
       <div class="card">
@@ -223,11 +244,17 @@ const char HTML_PAGE[] PROGMEM = R"=====(
         document.getElementById('db').innerText = d.db.toFixed(1);
         document.getElementById('mood').innerText = d.mood;
         document.getElementById('ip').innerText = window.location.hostname;
-        document.getElementById('rssi').innerText = d.rssi;
+        document.getElementById('time').innerText = d.time;
 
         document.getElementById('s_fan').style.color = d.fan ? '#10b981' : '#64748b';
         document.getElementById('s_lamp').style.color = d.lamp ? '#10b981' : '#64748b';
         document.getElementById('s_auto').innerText = d.auto ? "ON" : "MANUAL";
+
+        if(d.alert) {
+          document.getElementById('alert').style.display = 'block';
+        } else {
+          document.getElementById('alert').style.display = 'none';
+        }
       });
     }
     function cmd(act) { fetch('/cmd?do='+act).then(update); }
@@ -280,6 +307,8 @@ void setup() {
   if(WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWiFi Terhubung!");
     Serial.print("IP Address: "); Serial.println(WiFi.localIP());
+    // Init NTP Time
+    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET, "pool.ntp.org", "time.nist.gov");
   } else {
     Serial.println("\nGagal Connect. Masuk Mode Setup AP + Auto Reconnect Loop.");
     WiFi.softAP("SmartClass_AP");
@@ -318,11 +347,14 @@ void loop() {
   if (now - last_sensor > 2000) {
     last_sensor = now;
     readSensors();
-    logicAuto();
+    updateTime(); // Cek Waktu NTP
+    logicAuto();  // Logika Otomatis + Jadwal
+    checkAlert(); // Cek Bahaya
   }
 
-  // 2. Cek Telegram (Setiap 3 detik jika konek)
-  if (WiFi.status() == WL_CONNECTED && now - last_bot > 3000) {
+  // 2. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
+  // Mencegah musik patah-patah karena proses Telegram yang berat
+  if (!is_playing && WiFi.status() == WL_CONNECTED && now - last_bot > 3000) {
     last_bot = now;
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     while(numNewMessages) {
@@ -333,6 +365,25 @@ void loop() {
 }
 
 // ================= FUNGSI-FUNGSI =================
+
+void updateTime() {
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    time_str = "--:--";
+    return;
+  }
+  char timeStringBuff[10];
+  strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M", &timeinfo);
+  time_str = String(timeStringBuff);
+
+  // Tentukan Siang/Malam (07:00 - 17:00 Aktif)
+  int hour = timeinfo.tm_hour;
+  if (hour >= 7 && hour < 17) {
+    is_day_time = true;
+  } else {
+    is_day_time = false;
+  }
+}
 
 void checkWiFi() {
   // Cek koneksi setiap 10 detik. Jika putus, coba reconnect.
@@ -413,10 +464,43 @@ void readSensors() {
   else mood = "Tidak Kondusif 😡";
 }
 
+void checkAlert() {
+  bool current_danger = (gas > GAS_ALARM_LIMIT) || (t > TEMP_ALARM_LIMIT);
+
+  if (current_danger && !alert_active) {
+    // Bahaya baru terdeteksi -> Kirim Telegram
+    String msg = "⚠️ *PERINGATAN BAHAYA!*\n\n";
+    if(gas > GAS_ALARM_LIMIT) msg += "🔥 Gas Tinggi: " + String(gas) + " PPM\n";
+    if(t > TEMP_ALARM_LIMIT)  msg += "🌡 Suhu Panas: " + String(t) + " °C\n";
+    msg += "\nSegera cek lokasi!";
+
+    bot.sendMessage(chat_id, msg, "Markdown");
+    alert_active = true;
+  }
+  else if (!current_danger && alert_active) {
+    // Bahaya selesai -> Kirim Telegram
+    bot.sendMessage(chat_id, "✅ *KONDISI AMAN*\nSensor kembali normal.", "Markdown");
+    alert_active = false;
+  }
+}
+
 void logicAuto() {
   if (!mode_auto) return;
+
+  // FITUR BARU: JADWAL OTOMATIS (Hanya aktif 07:00 - 17:00)
+  // Di luar jam itu, matikan semua untuk hemat energi (kecuali ada bahaya, tp bahaya di handle checkAlert)
+  if (!is_day_time) {
+    st_fan = false;
+    st_lamp = false;
+    digitalWrite(PIN_FAN, LOW);
+    digitalWrite(PIN_LAMP, LOW);
+    return;
+  }
+
+  // Logika Normal (Siang Hari)
   if (t > 27.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
   else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
+
   if (lux < 500) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
   else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
 }
@@ -427,11 +511,13 @@ void handleJson() {
   json += "\"h\":" + String(h) + ",";
   json += "\"gas\":" + String(gas) + ",";
   json += "\"db\":" + String(db) + ",";
-  json += "\"rssi\":" + String(rssi) + ","; // Add RSSI
+  json += "\"rssi\":" + String(rssi) + ",";
   json += "\"fan\":" + String(st_fan) + ",";
   json += "\"lamp\":" + String(st_lamp) + ",";
   json += "\"auto\":" + String(mode_auto) + ",";
-  json += "\"mood\":\"" + mood + "\"";
+  json += "\"mood\":\"" + mood + "\",";
+  json += "\"time\":\"" + time_str + "\",";
+  json += "\"alert\":" + String(alert_active ? "true" : "false");
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -490,7 +576,10 @@ void handleTelegram(int numNewMessages) {
       bot.sendMessage(chat_id_msg, "Halo! Perintah: /cek, /fan_on, /fan_off, /lamp_on, /lamp_off", "");
     }
     else if (text == "/cek") {
-      String msg = "🌡 Suhu: " + String(t) + "C\n💡 Lampu: " + (st_lamp?"ON":"OFF") + "\n📶 Sinyal: " + String(rssi) + "dBm";
+      String msg = "Status Kelas (" + time_str + "):\n";
+      msg += "🌡 Suhu: " + String(t) + "C\n";
+      msg += "💡 Lampu: " + String(st_lamp?"ON":"OFF") + "\n";
+      msg += "⚠️ Alert: " + String(alert_active?"BAHAYA":"AMAN");
       bot.sendMessage(chat_id_msg, msg, "");
     }
     else if (text == "/fan_on") { mode_auto=false; st_fan=true; digitalWrite(PIN_FAN, HIGH); bot.sendMessage(chat_id_msg, "Kipas ON", ""); }
