@@ -265,8 +265,12 @@ void setup() {
     Serial.println("\nWiFi Connected: " + WiFi.localIP().toString());
     configTime(GMT_OFFSET_SEC, DAY_LIGHT_OFFSET, NTP_SERVER);
 
-    // Startup Sound (Mario Short)
+    // Startup Sound (Mario Short) - BLOCKING to allow sensor warmup
     playSong(0);
+    while(is_playing) {
+      handleMusic();
+      delay(10);
+    }
   } else {
     Serial.println("\nWiFi Fail. AP Mode: SmartClass_Setup");
     WiFi.softAP("SmartClass_Setup", "12345678");
@@ -336,13 +340,16 @@ void readSensors() {
   // Debug Serial
   if(mq2_val > 2000) Serial.println("AI:ROKOK TERDETEKSI! 🚭 T:" + String(t));
 
-  // Safety Logic (Gas/Smoke) - THROTTLED to once every 30s
-  bool gas_alert = (gas > 2500) || (gas_dig == LOW);
-  bool smoke_alert = (mq2_val > 2500);
+  // Safety Logic (Gas/Smoke) - THROTTLED & WARMUP (60s)
+  // Sensor MQ butuh waktu panas (warmup) agar pembacaan stabil (turun).
+  bool warmup_done = (millis() > 60000);
+
+  bool gas_alert = (gas > 3000) || (gas_dig == LOW); // Threshold naik ke 3000
+  bool smoke_alert = (mq2_val > 3000);
   unsigned long now = millis();
 
-  if (gas_alert || smoke_alert) {
-    // Only send alert if enough time passed
+  if ((gas_alert || smoke_alert) && warmup_done) {
+    // Only send alert if enough time passed AND warmup done
     if (WiFi.status() == WL_CONNECTED && (now - last_alert > 30000)) {
         last_alert = now;
         String alert = "⚠️ BAHAYA: ";
