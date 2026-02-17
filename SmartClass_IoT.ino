@@ -3,10 +3,10 @@
  * Board: ESP32 Dev Module
  * Fitur: Monitoring Sensor (Realtime), Telegram Bot, Web Dashboard (Stable), Music Player, WiFi Manager
  *
- * Update Fixes (v3.4 - JSON v7 & HTML Safe):
- * - COMPILER: HTML string dipisah agar aman dari error "function does not name a type".
- * - JSON: Update ke ArduinoJson v7 (menggunakan JsonDocument).
- * - STRUCTURE: Setup & Loop tetap di atas.
+ * Update Fixes (v3.5 - WiFi Scan Fixed):
+ * - WIFI SCAN: Diperbaiki dengan mode async/blocking yang lebih robust + Hidden Networks.
+ * - LOGGING: Ditambah Serial Print untuk debug scan.
+ * - COMPILER: Struktur tetap aman (setup/loop di atas).
  */
 
 #include <WiFi.h>
@@ -238,21 +238,37 @@ void loop() {
 // ================= FUNGSI-FUNGSI PENDUKUNG =================
 
 void handleScanWiFi() {
-  Serial.println("[WIFI] Scanning Networks...");
-  int n = WiFi.scanNetworks();
-  Serial.print("[WIFI] Found: "); Serial.println(n);
+  Serial.println("[WIFI] Start Scan...");
+
+  // WiFi Scan Sync (Blocking) - Simpel dan Ampuh
+  int n = WiFi.scanNetworks(false, true); // (async=false, show_hidden=true)
+
+  Serial.print("[WIFI] Scan Done. Found: ");
+  Serial.println(n);
 
   // JSON v7: JsonDocument
   JsonDocument doc;
   JsonArray array = doc.to<JsonArray>();
 
-  for (int i = 0; i < n; ++i) {
-    array.add(WiFi.SSID(i));
-    if(i >= 20) break;
+  if (n == 0) {
+    Serial.println("[WIFI] No networks found");
+  } else {
+    for (int i = 0; i < n; ++i) {
+      array.add(WiFi.SSID(i));
+      // Hanya tampilkan di Serial jika perlu debug
+      // Serial.print(i + 1); Serial.print(": "); Serial.print(WiFi.SSID(i)); Serial.print(" ("); Serial.print(WiFi.RSSI(i)); Serial.println(")");
+      if(i >= 20) break; // Limit 20
+    }
   }
 
   String json;
   serializeJson(doc, json);
+
+  // Header penting agar browser tidak cache hasil scan
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "-1");
+
   server.send(200, "application/json", json);
 }
 
@@ -484,8 +500,10 @@ void handleTelegram(int numNewMessages) {
   }
 }
 
-// ================= HTML PART (Raw String yang Aman) =================
-// Memecah menjadi 2 bagian untuk mencegah parser error
+// ================= HTML SECTION =================
+extern const char HTML_PAGE[]; // Forward declaration (sebenarnya tidak dipakai lagi jika split)
+extern const char HTML_HEAD[];
+extern const char HTML_BODY[];
 
 const char HTML_HEAD[] PROGMEM = R"=====(
 <!DOCTYPE html><html lang="id"><head>
@@ -558,7 +576,6 @@ setInterval(update,1000);update();
 </script></body></html>
 )=====";
 
-// Handler Root Menggabungkan HEAD + BODY
 void handleRoot() {
   server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.sendHeader("Pragma", "no-cache");
