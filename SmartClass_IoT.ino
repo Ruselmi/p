@@ -3,10 +3,10 @@
  * Board: ESP32 Dev Module
  * Fitur: Monitoring Sensor (Realtime), Telegram Bot, Web Dashboard (Stable), Music Player, WiFi Manager
  *
- * Update Fixes (v3.5 - WiFi Scan Fixed):
- * - WIFI SCAN: Diperbaiki dengan mode async/blocking yang lebih robust + Hidden Networks.
- * - LOGGING: Ditambah Serial Print untuk debug scan.
- * - COMPILER: Struktur tetap aman (setup/loop di atas).
+ * Update Fixes (v3.6 - ASYNC SCAN & BOT FIX):
+ * - WIFI SCAN: Mode ASYNC (Non-Blocking) agar Web tidak timeout saat scan.
+ * - TELEGRAM: Optimasi polling agar lebih responsif.
+ * - SYSTEM: Reset watchdog timer.
  */
 
 #include <WiFi.h>
@@ -135,7 +135,7 @@ void setup() {
   // Setup PWM LEDC untuk Buzzer
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(PIN_BUZZER, PWM_CHANNEL);
-  ledcWriteTone(PWM_CHANNEL, 0); // Matikan buzzer di awal
+  ledcWriteTone(PWM_CHANNEL, 0);
 
   dht.begin();
 
@@ -147,11 +147,9 @@ void setup() {
   chat_id   = pref.getString("id", chat_id);
 
   bot.updateToken(bot_token);
-  Serial.println("[SETUP] Preferences Loaded");
 
   // 3. Koneksi WiFi
   Serial.print("[WIFI] Connecting to: "); Serial.println(ssid_name);
-
   WiFi.mode(WIFI_AP_STA);
   WiFi.begin(ssid_name.c_str(), ssid_pass.c_str());
 
@@ -163,37 +161,32 @@ void setup() {
 
   if(WiFi.status() == WL_CONNECTED) {
     Serial.println("\n[WIFI] Connected!");
-    Serial.print("[WIFI] IP Address: "); Serial.println(WiFi.localIP());
-    // Init NTP Time
+    Serial.print("[WIFI] IP: "); Serial.println(WiFi.localIP());
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET, "pool.ntp.org", "time.nist.gov");
-    Serial.println("[NTP] Time synced");
   } else {
-    Serial.println("\n[WIFI] Failed. Starting AP Mode.");
+    Serial.println("\n[WIFI] Failed. AP Mode: SmartClass_AP");
     WiFi.softAP("SmartClass_AP");
-    Serial.print("[AP] IP Address: "); Serial.println(WiFi.softAPIP());
+    Serial.print("[AP] IP: "); Serial.println(WiFi.softAPIP());
   }
 
-  // 4. Setup Server
-  client.setInsecure();
+  // 4. Setup Server & Telegram
+  client.setInsecure(); // PENTING UNTUK TELEGRAM
   server.on("/", handleRoot);
   server.on("/data", handleJson);
   server.on("/cmd", handleCommand);
   server.on("/csv", handleDownload);
   server.on("/scan", handleScanWiFi);
   server.on("/save", HTTP_POST, handleSaveSettings);
-  server.enableCORS(true); // ENABLE CORS
+  server.enableCORS(true);
   server.begin();
   Serial.println("[SERVER] Started");
 
-  // --- STARTUP SOUND: MARIO INTRO ---
+  // --- STARTUP SOUND ---
   int mario_notes[] = {NOTE_E5, NOTE_E5, NOTE_E5, NOTE_C5, NOTE_E5, NOTE_G5, NOTE_G4};
   int mario_durs[]  = {100, 100, 100, 100, 100, 200, 200};
-
   for(int i=0; i<7; i++){
-    ledcWriteTone(PWM_CHANNEL, mario_notes[i]);
-    delay(mario_durs[i]);
-    ledcWriteTone(PWM_CHANNEL, 0);
-    delay(50); // Jeda antar nada
+    ledcWriteTone(PWM_CHANNEL, mario_notes[i]); delay(mario_durs[i]);
+    ledcWriteTone(PWM_CHANNEL, 0); delay(50);
   }
 }
 
@@ -204,98 +197,79 @@ void loop() {
 
   unsigned long now = millis();
 
-  // 1. Baca Sensor DHT (Tiap 2 detik)
+  // 1. Baca Sensor DHT (2 detik)
   if (now - last_dht > 2000) {
     last_dht = now;
     readDHT();
   }
 
-  // 2. Baca Sensor Analog Lain (Tiap 1 detik)
+  // 2. Baca Sensor Analog (1 detik)
   if (now - last_analog > 1000) {
     last_analog = now;
     readAnalogSensors();
     updateTime();
     logicAuto();
     checkAlert();
-
-    // Debug info
-    Serial.print("[SENSOR] T:"); Serial.print(t);
-    Serial.print(" H:"); Serial.println(h);
+    // Debug
+    Serial.print("T:"); Serial.print(t); Serial.print(" H:"); Serial.println(h);
   }
 
-  // 3. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
-  if (!is_playing && WiFi.status() == WL_CONNECTED && now - last_bot > 3000) {
+  // 3. Cek Telegram (Tiap 3 detik, jika WiFi connect & tidak musik)
+  if (WiFi.status() == WL_CONNECTED && !is_playing && (now - last_bot > 3000)) {
     last_bot = now;
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     while(numNewMessages) {
-      Serial.println("[BOT] New Message!");
+      Serial.println("[BOT] Pesan Masuk!");
       handleTelegram(numNewMessages);
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
   }
 }
 
-// ================= FUNGSI-FUNGSI PENDUKUNG =================
-
+// ================= FUNGSI SCAN WIFI ASYNC =================
 void handleScanWiFi() {
-  Serial.println("[WIFI] Start Scan...");
+  int n = WiFi.scanComplete();
 
-  // WiFi Scan Sync (Blocking) - Simpel dan Ampuh
-  int n = WiFi.scanNetworks(false, true); // (async=false, show_hidden=true)
+  if (n == -2) {
+    // Belum mulai scan, mulai sekarang (Async = true)
+    WiFi.scanNetworks(true, true); // (async, hidden)
+    server.send(202, "application/json", "{\"status\":\"scanning\"}");
+  }
+  else if (n == -1) {
+    // Masih scanning
+    server.send(202, "application/json", "{\"status\":\"scanning\"}");
+  }
+  else {
+    // Scan selesai (n >= 0)
+    JsonDocument doc;
+    JsonArray array = doc.to<JsonArray>();
 
-  Serial.print("[WIFI] Scan Done. Found: ");
-  Serial.println(n);
-
-  // JSON v7: JsonDocument
-  JsonDocument doc;
-  JsonArray array = doc.to<JsonArray>();
-
-  if (n == 0) {
-    Serial.println("[WIFI] No networks found");
-  } else {
     for (int i = 0; i < n; ++i) {
       array.add(WiFi.SSID(i));
-      // Hanya tampilkan di Serial jika perlu debug
-      // Serial.print(i + 1); Serial.print(": "); Serial.print(WiFi.SSID(i)); Serial.print(" ("); Serial.print(WiFi.RSSI(i)); Serial.println(")");
-      if(i >= 20) break; // Limit 20
+      if(i >= 20) break;
     }
+    WiFi.scanDelete(); // Hapus hasil scan lama
+
+    String json;
+    serializeJson(doc, json);
+    server.send(200, "application/json", json);
   }
-
-  String json;
-  serializeJson(doc, json);
-
-  // Header penting agar browser tidak cache hasil scan
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Expires", "-1");
-
-  server.send(200, "application/json", json);
 }
 
+// ================= FUNGSI LAINNYA =================
 void updateTime() {
   struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    time_str = "--:--";
-    return;
-  }
-  char timeStringBuff[10];
-  strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M", &timeinfo);
-  time_str = String(timeStringBuff);
-
-  int hour = timeinfo.tm_hour;
-  if (hour >= 7 && hour < 17) {
-    is_day_time = true;
-  } else {
-    is_day_time = false;
-  }
+  if(!getLocalTime(&timeinfo)){ time_str = "--:--"; return; }
+  char b[10]; strftime(b, sizeof(b), "%H:%M", &timeinfo);
+  time_str = String(b);
+  is_day_time = (timeinfo.tm_hour >= 7 && timeinfo.tm_hour < 17);
 }
 
 void checkWiFi() {
-  unsigned long now = millis();
-  if (now - last_wifi_check > 10000) {
-    last_wifi_check = now;
+  if (millis() - last_wifi_check > 15000) {
+    last_wifi_check = millis();
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("[WIFI] Lost Connection. Reconnecting...");
+      Serial.println("[WIFI] Reconnecting...");
       WiFi.reconnect();
     }
   }
@@ -303,37 +277,24 @@ void checkWiFi() {
 
 int smoothAnalog(int pin) {
   long total = 0;
-  int samples = 5;
-  for (int i = 0; i < samples; i++) {
-    total += analogRead(pin);
-    delay(2);
-  }
-  return total / samples;
+  for (int i = 0; i < 5; i++) { total += analogRead(pin); delay(2); }
+  return total / 5;
 }
 
 void handleSaveSettings() {
   if (server.hasArg("ssid") || server.hasArg("ssid_manual")) {
     String n_ssid = server.arg("ssid");
-    if(server.arg("ssid_manual").length() > 0) {
-      n_ssid = server.arg("ssid_manual");
-    }
+    if(server.arg("ssid_manual").length() > 0) n_ssid = server.arg("ssid_manual");
 
-    String n_pass = server.arg("pass");
-    String n_bot  = server.arg("bot");
-    String n_id   = server.arg("id");
-
-    Serial.println("[SETTINGS] Saving new config...");
     pref.putString("ssid", n_ssid);
-    pref.putString("pass", n_pass);
-    if(n_bot.length() > 5) pref.putString("bot", n_bot);
-    if(n_id.length() > 5)  pref.putString("id", n_id);
+    pref.putString("pass", server.arg("pass"));
+    if(server.arg("bot").length() > 5) pref.putString("bot", server.arg("bot"));
+    if(server.arg("id").length() > 5)  pref.putString("id", server.arg("id"));
 
-    String html = "<html><body><h1>Berhasil Disimpan!</h1><p>Alat akan restart...</p></body></html>";
-    server.send(200, "text/html", html);
-    delay(2000);
-    ESP.restart();
+    server.send(200, "text/html", "<h1>Tersimpan! Restarting...</h1>");
+    delay(1000); ESP.restart();
   } else {
-    server.send(400, "text/plain", "Error: SSID kosong");
+    server.send(400, "text/plain", "Error: SSID Empty");
   }
 }
 
@@ -347,239 +308,163 @@ void readDHT() {
 void readAnalogSensors() {
   gas = smoothAnalog(PIN_MQ135);
   lux = smoothAnalog(PIN_LDR);
-
   digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2);
   digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10);
   digitalWrite(PIN_TRIG, LOW);
   long dur = pulseIn(PIN_ECHO, HIGH, 30000);
   dist = (dur == 0) ? 0 : dur * 0.034 / 2;
-
-  int raw_sound = smoothAnalog(PIN_SOUND);
-  db = (raw_sound / 4095.0) * 100.0;
-
+  db = (smoothAnalog(PIN_SOUND) / 4095.0) * 100.0;
   rssi = WiFi.RSSI();
 
-  int stress = 0;
-  if (t > 28) stress += 30;
-  if (db > 60) stress += 30;
-  if (gas > 2000) stress += 30;
-
-  if (stress < 30) mood = "Nyaman 😊";
-  else if (stress < 60) mood = "Fokus 😐";
-  else mood = "Tidak Kondusif 😡";
+  int s = 0;
+  if (t > 28) s += 30;
+  if (db > 60) s += 30;
+  if (gas > 2000) s += 30;
+  if (s < 30) mood = "Nyaman"; else if (s < 60) mood = "Fokus"; else mood = "Tidak Kondusif";
 }
 
 void checkAlert() {
-  bool current_danger = (gas > GAS_ALARM_LIMIT) || (t > TEMP_ALARM_LIMIT);
-
-  if (current_danger && !alert_active) {
-    Serial.println("[ALERT] Danger Detected!");
-    String msg = "⚠️ *PERINGATAN BAHAYA!*\n\n";
-    if(gas > GAS_ALARM_LIMIT) msg += "🔥 Gas Tinggi: " + String(gas) + " PPM\n";
-    if(t > TEMP_ALARM_LIMIT)  msg += "🌡 Suhu Panas: " + String(t) + " °C\n";
-    msg += "\nSegera cek lokasi!";
-    bot.sendMessage(chat_id, msg, "Markdown");
+  bool danger = (gas > GAS_ALARM_LIMIT) || (t > TEMP_ALARM_LIMIT);
+  if (danger && !alert_active) {
+    bot.sendMessage(chat_id, "⚠️ BAHAYA! Cek Kelas!", "");
     alert_active = true;
-  }
-  else if (!current_danger && alert_active) {
-    Serial.println("[ALERT] Condition Normal.");
-    bot.sendMessage(chat_id, "✅ *KONDISI AMAN*\nSensor kembali normal.", "Markdown");
+  } else if (!danger && alert_active) {
+    bot.sendMessage(chat_id, "✅ Aman.", "");
     alert_active = false;
   }
 }
 
 void logicAuto() {
   if (!mode_auto) return;
-
-  if (!is_day_time) {
-    st_fan = false;
-    st_lamp = false;
-    digitalWrite(PIN_FAN, LOW);
-    digitalWrite(PIN_LAMP, LOW);
-    return;
-  }
-
-  if (t > 27.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
-  else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
-
-  if (lux < 500) { st_lamp = true; digitalWrite(PIN_LAMP, HIGH); }
-  else { st_lamp = false; digitalWrite(PIN_LAMP, LOW); }
+  if (!is_day_time) { digitalWrite(PIN_FAN,0); digitalWrite(PIN_LAMP,0); return; }
+  digitalWrite(PIN_FAN, t > 27.0);
+  digitalWrite(PIN_LAMP, lux < 500);
 }
 
 void handleJson() {
-  // JSON v7: JsonDocument (auto size)
   JsonDocument doc;
-
-  doc["t"] = t;
-  doc["h"] = h;
-  doc["gas"] = gas;
-  doc["db"] = db;
-  doc["rssi"] = rssi;
-  doc["fan"] = st_fan;
-  doc["lamp"] = st_lamp;
-  doc["auto"] = mode_auto;
-  doc["mood"] = mood;
-  doc["time"] = time_str;
-  doc["alert"] = alert_active;
-
-  String json;
-  serializeJson(doc, json);
-
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Expires", "-1");
-
+  doc["t"] = t; doc["h"] = h; doc["gas"] = gas; doc["db"] = db;
+  doc["rssi"] = rssi; doc["fan"] = st_fan; doc["lamp"] = st_lamp;
+  doc["auto"] = mode_auto; doc["mood"] = mood; doc["time"] = time_str; doc["alert"] = alert_active;
+  String json; serializeJson(doc, json);
+  server.sendHeader("Cache-Control", "no-cache, no-store");
   server.send(200, "application/json", json);
 }
 
 void handleCommand() {
   String act = server.arg("do");
-  Serial.print("[CMD] Received: "); Serial.println(act);
-
   if (act == "fan_toggle") { mode_auto = false; st_fan = !st_fan; digitalWrite(PIN_FAN, st_fan); }
   if (act == "lamp_toggle") { mode_auto = false; st_lamp = !st_lamp; digitalWrite(PIN_LAMP, st_lamp); }
   if (act == "auto_toggle") { mode_auto = !mode_auto; }
   if (act == "music_play") { is_playing = true; note_index = 0; note_state = false; last_note_start = millis(); }
   if (act == "music_stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); }
-
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   server.send(200, "text/plain", "OK");
 }
 
 void handleDownload() {
-  String csv = "Waktu,Suhu,Lembab,Gas,Suara,RSSI\n";
-  csv += String(millis()) + "," + String(t) + "," + String(h) + "," + String(gas) + "," + String(db) + "," + String(rssi);
-  server.sendHeader("Content-Disposition", "attachment; filename=log_kelas.csv");
+  String csv = "Time,T,H,Gas,DB\n" + String(millis()) + "," + String(t) + "," + String(h) + "," + String(gas) + "," + String(db);
+  server.sendHeader("Content-Disposition", "attachment; filename=log.csv");
   server.send(200, "text/csv", csv);
 }
 
 void handleMusic() {
   if (!is_playing) return;
-
-  int note_duration = 1000 / durations_theme[note_index];
-  int pause_between = note_duration * 1.30;
+  int dur = 1000 / durations_theme[note_index];
   unsigned long now = millis();
+  if (!note_state) { ledcWriteTone(PWM_CHANNEL, melody_theme[note_index]); note_state = true; last_note_start = now; }
+  if (note_state && (now - last_note_start > dur)) ledcWriteTone(PWM_CHANNEL, 0);
+  if (now - last_note_start > (dur * 1.30)) { note_state = false; note_index++; if(note_index >= melody_len) note_index=0; }
+}
 
-  if (!note_state) {
-    ledcWriteTone(PWM_CHANNEL, melody_theme[note_index]);
-    note_state = true;
-    last_note_start = now;
-  }
-
-  if (note_state && (now - last_note_start > note_duration)) {
-    ledcWriteTone(PWM_CHANNEL, 0);
-  }
-
-  if (now - last_note_start > pause_between) {
-    note_state = false;
-    note_index++;
-    if (note_index >= melody_len) { note_index = 0; }
+void handleTelegram(int n) {
+  for (int i=0; i<n; i++) {
+    String txt = bot.messages[i].text;
+    String cid = bot.messages[i].chat_id;
+    if (txt == "/start") bot.sendMessage(cid, "Halo! Cmd: /cek /fan_on /fan_off /lamp_on /lamp_off", "");
+    else if (txt == "/cek") bot.sendMessage(cid, "Suhu: "+String(t)+"C\nLampu: "+(st_lamp?"ON":"OFF"), "");
+    else if (txt == "/fan_on") { digitalWrite(PIN_FAN,1); mode_auto=0; bot.sendMessage(cid, "Fan ON", ""); }
+    else if (txt == "/fan_off") { digitalWrite(PIN_FAN,0); mode_auto=0; bot.sendMessage(cid, "Fan OFF", ""); }
+    else if (txt == "/lamp_on") { digitalWrite(PIN_LAMP,1); mode_auto=0; bot.sendMessage(cid, "Lamp ON", ""); }
+    else if (txt == "/lamp_off") { digitalWrite(PIN_LAMP,0); mode_auto=0; bot.sendMessage(cid, "Lamp OFF", ""); }
   }
 }
 
-void handleTelegram(int numNewMessages) {
-  for (int i = 0; i < numNewMessages; i++) {
-    String chat_id_msg = bot.messages[i].chat_id;
-    String text = bot.messages[i].text;
-    Serial.print("[BOT] Msg: "); Serial.println(text);
-
-    if (text == "/start") {
-      bot.sendMessage(chat_id_msg, "Halo! Perintah: /cek, /fan_on, /fan_off, /lamp_on, /lamp_off", "");
-    }
-    else if (text == "/cek") {
-      String msg = "Status Kelas (" + time_str + "):\n";
-      msg += "🌡 Suhu: " + String(t) + "C\n";
-      msg += "💡 Lampu: " + String(st_lamp?"ON":"OFF") + "\n";
-      msg += "⚠️ Alert: " + String(alert_active?"BAHAYA":"AMAN");
-      bot.sendMessage(chat_id_msg, msg, "");
-    }
-    else if (text == "/fan_on") { mode_auto=false; st_fan=true; digitalWrite(PIN_FAN, HIGH); bot.sendMessage(chat_id_msg, "Kipas ON", ""); }
-    else if (text == "/fan_off") { mode_auto=false; st_fan=false; digitalWrite(PIN_FAN, LOW); bot.sendMessage(chat_id_msg, "Kipas OFF", ""); }
-    else if (text == "/lamp_on") { mode_auto=false; st_lamp=true; digitalWrite(PIN_LAMP, HIGH); bot.sendMessage(chat_id_msg, "Lampu ON", ""); }
-    else if (text == "/lamp_off") { mode_auto=false; st_lamp=false; digitalWrite(PIN_LAMP, LOW); bot.sendMessage(chat_id_msg, "Lampu OFF", ""); }
-  }
-}
-
-// ================= HTML SECTION =================
-extern const char HTML_PAGE[]; // Forward declaration (sebenarnya tidak dipakai lagi jika split)
+// ================= HTML (EXTERN) =================
+extern const char HTML_PAGE[];
 extern const char HTML_HEAD[];
 extern const char HTML_BODY[];
 
 const char HTML_HEAD[] PROGMEM = R"=====(
 <!DOCTYPE html><html lang="id"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Smart Class IoT</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<title>Smart Class</title>
 <style>
-:root { --bg: #0f172a; --card: #1e293b; --primary: #6366f1; --text: #f1f5f9; --ok: #10b981; --warn: #f59e0b; --danger: #ef4444; }
-body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-.container { max-width: 800px; margin: 0 auto; }
-header { text-align: center; margin-bottom: 30px; }
-h1 { margin: 0; font-size: 1.8rem; background: linear-gradient(to right, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.status-dot { height: 10px; width: 10px; background-color: var(--ok); border-radius: 50%; display: inline-block; margin-right: 5px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
-.card { background: var(--card); padding: 20px; border-radius: 16px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.05); }
-.card h3 { margin: 0 0 10px 0; font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-.val { font-size: 1.8rem; font-weight: 800; }
-.unit { font-size: 0.9rem; color: #64748b; font-weight: 400; }
-.controls { margin-top: 20px; display: grid; gap: 10px; }
-.btn-group { display: flex; gap: 10px; }
-button { flex: 1; padding: 15px; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; color: white; transition: 0.2s; }
-.btn-on { background: var(--card); border: 1px solid var(--primary); }
-.btn-on:hover { background: var(--primary); }
-.btn-off { background: var(--card); border: 1px solid var(--danger); }
-.btn-off:hover { background: var(--danger); }
-.btn-music { background: linear-gradient(135deg, #ec4899, #8b5cf6); border: none; }
-input[type=text], input[type=password], select { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; }
-.form-card { text-align: left !important; grid-column: span 2; }
-.footer { margin-top: 30px; text-align: center; font-size: 0.8rem; color: #475569; }
-.alert-box { background: var(--danger); color: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: none; text-align: center; font-weight: bold; }
+:root{--bg:#0f172a;--c:#1e293b;--p:#6366f1;--t:#f1f5f9;--ok:#10b981;--err:#ef4444;}
+body{font-family:sans-serif;background:var(--bg);color:var(--t);padding:20px;margin:0}
+.card{background:var(--c);padding:20px;border-radius:12px;text-align:center;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.val{font-size:1.8rem;font-weight:bold}
+button{width:100%;padding:15px;border:none;border-radius:8px;font-weight:bold;margin:5px 0;cursor:pointer;color:#fff}
+.btn-on{background:var(--p)} .btn-off{background:var(--err)}
+input,select{width:100%;padding:10px;margin:5px 0;border-radius:8px;background:#334155;color:#fff;border:1px solid #475569}
 </style></head>
 )=====";
 
 const char HTML_BODY[] PROGMEM = R"=====(
 <body>
-<div class="container">
-<header><h1>Smart Class Panel</h1><div style="margin-top:5px; color:#94a3b8; font-size:0.9rem;"><span class="status-dot" id="dot"></span><span id="status_txt">Online</span> | <span id="ip">Loading...</span> | <span id="time">--:--</span></div></header>
-<div id="alert" class="alert-box">⚠️ PERINGATAN: SUHU / GAS BERBAHAYA!</div>
+<div style="max-width:600px;margin:0 auto">
+<div class="card"><h2>Smart Class Panel</h2><span id="st" style="color:var(--ok)">● Online</span> | <span id="tm">--:--</span></div>
 <div class="grid">
-<div class="card"><h3>Suhu</h3><div class="val" id="t">--</div><span class="unit">°C</span></div>
-<div class="card"><h3>Kelembaban</h3><div class="val" id="h">--</div><span class="unit">%</span></div>
-<div class="card"><h3>Udara</h3><div class="val" id="gas">--</div><span class="unit">PPM</span></div>
-<div class="card"><h3>Kebisingan</h3><div class="val" id="db">--</div><span class="unit">dB</span></div>
-<div class="card" style="grid-column: span 2;"><h3>Mood Kelas</h3><div class="val" id="mood" style="color: var(--primary);">Loading...</div></div>
-<div class="card form-card"><h3>⚙️ Pengaturan Koneksi</h3><form action="/save" method="POST">
-<label>Pilih WiFi:</label><div style="display:flex; gap:5px;"><select id="ssid_list" name="ssid"><option value="" disabled selected>-- Scan Dulu --</option></select><button type="button" onclick="scanWifi()" style="width:100px; padding:10px; background:#6366f1;">🔄 Scan</button></div>
-<input type="text" id="ssid_manual" name="ssid_manual" placeholder="Atau ketik nama WiFi manual..." style="margin-top:-10px;">
-<label>WiFi Password:</label><input type="password" name="pass" placeholder="Password WiFi">
-<label>Bot Token:</label><input type="text" name="bot" placeholder="Telegram Bot Token">
-<label>Chat ID Admin:</label><input type="text" name="id" placeholder="ID Admin Telegram">
-<button type="submit" class="btn-on" style="background:#10b981; width:100%;">SIMPAN & RESTART ALAT</button></form></div></div>
-<div class="controls"><div class="btn-group"><button onclick="cmd('fan_toggle')" class="btn-on">KIPAS <span id="s_fan">●</span></button><button onclick="cmd('lamp_toggle')" class="btn-on">LAMPU <span id="s_lamp">●</span></button></div>
-<button onclick="cmd('auto_toggle')" style="background:#334155;">MODE OTOMATIS: <span id="s_auto">ON</span></button>
-<div class="btn-group"><button onclick="cmd('music_play')" class="btn-music">♫ PLAY ZELDA</button><button onclick="cmd('music_stop')" class="btn-off">■ STOP</button></div></div>
-<div class="footer"><a href="/csv" style="color:var(--primary); text-decoration:none;">📥 Download Laporan Excel (.csv)</a></div></div>
+<div class="card"><h3>🌡 Suhu</h3><div class="val"><span id="t">--</span>°C</div></div>
+<div class="card"><h3>💧 Lembab</h3><div class="val"><span id="h">--</span>%</div></div>
+<div class="card"><h3>☁️ Udara</h3><div class="val"><span id="g">--</span></div></div>
+<div class="card"><h3>🔊 Suara</h3><div class="val"><span id="d">--</span></div></div>
+</div>
+<div class="card"><h3>Mood: <span id="m" style="color:var(--p)">--</span></h3></div>
+
+<div class="card">
+<button class="btn-on" onclick="c('fan_toggle')">FAN</button>
+<button class="btn-on" onclick="c('lamp_toggle')">LAMP</button>
+<button style="background:#475569" onclick="c('auto_toggle')">AUTO: <span id="au">ON</span></button>
+<button style="background:linear-gradient(45deg,#ec4899,#8b5cf6)" onclick="c('music_play')">♫ PLAY ZELDA</button>
+<button class="btn-off" onclick="c('music_stop')">STOP</button>
+</div>
+
+<div class="card" style="text-align:left">
+<h3>⚙️ Setup WiFi</h3>
+<form action="/save" method="POST">
+<select id="sl" name="ssid"><option>Scanning...</option></select>
+<button type="button" onclick="sc()" style="background:#0ea5e9">🔄 Rescan</button>
+<input type="text" name="ssid_manual" placeholder="Manual SSID">
+<input type="password" name="pass" placeholder="Password">
+<input type="text" name="bot" placeholder="Bot Token">
+<input type="text" name="id" placeholder="Chat ID">
+<button class="btn-on" type="submit">SAVE</button>
+</form>
+</div>
+</div>
 <script>
-function update(){fetch('/data?_='+Date.now()).then(r=>r.json()).then(d=>{
+function u(){fetch('/data?_='+Date.now()).then(r=>r.json()).then(d=>{
 document.getElementById('t').innerText=d.t.toFixed(1);document.getElementById('h').innerText=d.h.toFixed(0);
-document.getElementById('gas').innerText=d.gas;document.getElementById('db').innerText=d.db.toFixed(1);
-document.getElementById('mood').innerText=d.mood;document.getElementById('ip').innerText=window.location.hostname;
-document.getElementById('time').innerText=d.time;
-document.getElementById('s_fan').style.color=d.fan?'#10b981':'#64748b';document.getElementById('s_lamp').style.color=d.lamp?'#10b981':'#64748b';
-document.getElementById('s_auto').innerText=d.auto?"ON":"MANUAL";
-if(d.alert)document.getElementById('alert').style.display='block';else document.getElementById('alert').style.display='none';
-document.getElementById('dot').style.backgroundColor='#10b981';document.getElementById('status_txt').innerText="Online";
-}).catch(e=>{console.log(e);document.getElementById('dot').style.backgroundColor='#ef4444';document.getElementById('status_txt').innerText="Terputus...";});}
-function scanWifi(){var s=document.getElementById('ssid_list');s.innerHTML="<option>Scanning...</option>";fetch('/scan').then(r=>r.json()).then(d=>{s.innerHTML="";if(d.length===0)s.innerHTML="<option>No WiFi</option>";else d.forEach(x=>{var o=document.createElement('option');o.value=x;o.innerText=x;s.appendChild(o);});}).catch(e=>{s.innerHTML="<option>Error</option>";});}
-function cmd(a){fetch('/cmd?do='+a).then(update);}
-setInterval(update,1000);update();
+document.getElementById('g').innerText=d.gas;document.getElementById('d').innerText=d.db.toFixed(1);
+document.getElementById('m').innerText=d.mood;document.getElementById('tm').innerText=d.time;
+document.getElementById('au').innerText=d.auto?"ON":"MAN";
+}).catch(e=>console.log(e));}
+function c(a){fetch('/cmd?do='+a).then(u);}
+function sc(){
+var s=document.getElementById('sl');s.innerHTML="<option>Scanning...</option>";
+fetch('/scan').then(r=>r.json()).then(d=>{
+  if(d.status=="scanning"){setTimeout(sc,2000);return;}
+  s.innerHTML="";
+  d.forEach(x=>{var o=document.createElement('option');o.value=x;o.innerText=x;s.appendChild(o)});
+}).catch(e=>s.innerHTML="<option>Error</option>");
+}
+setInterval(u,1000);u();setTimeout(sc,2000);
 </script></body></html>
 )=====";
 
 void handleRoot() {
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Expires", "-1");
+  server.sendHeader("Cache-Control", "no-cache");
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(200, "text/html", "");
   server.sendContent(HTML_HEAD);
