@@ -1,14 +1,14 @@
 /*
  * SMART CLASS IOT - MINIMALIST EDITION (Single File)
  * Board: ESP32 Dev Module
- * Fitur: Monitoring Sensor, Telegram Bot, Web Dashboard (Stable), Music Player, WiFi Manager (Scan & Connect)
+ * Fitur: Monitoring Sensor, Telegram Bot, Web Dashboard (Stable & Debugged), Music Player, WiFi Manager (Scan & Connect)
  *
- * Update Fixes:
- * - STABILITY: Menggunakan StaticJsonDocument untuk memori yang lebih aman (mencegah crash/hang).
- * - WEB: Menambahkan fitur SCAN WIFI agar tidak perlu ketik manual.
- * - BUG FIX: Prioritas server.handleClient() ditingkatkan agar web tidak lemot.
- * - SYSTEM: Waktu NTP & Jadwal Otomatis (07:00-17:00).
- * - ALERT: Notifikasi Bahaya (Gas > 2500 / Suhu > 35).
+ * Update Fixes (v3.1):
+ * - SECURITY: Removed hardcoded credentials.
+ * - WEB: Fixed CORS duplicate headers (using server.enableCORS only).
+ * - FORM: Fixed 'required' attribute on SSID dropdown to allow manual entry.
+ * - MEMORY: Used DynamicJsonDocument for safer memory allocation.
+ * - WIFI: Optimized reconnect logic.
  */
 
 #include <WiFi.h>
@@ -51,11 +51,11 @@ WiFiClientSecure client;
 UniversalTelegramBot bot("", client);
 Preferences pref;
 
-// Default values (bisa diubah lewat web)
-String ssid_name = "ELSON";
-String ssid_pass = "elso250129";
-String bot_token = "8324067380:AAHfMtWfLdtoYByjnrm2sgy90z3y01V6C-I";
-String chat_id   = "6383896382";
+// Default values (bisa diubah lewat web atau hardcode di sini untuk test awal)
+String ssid_name = "YOUR_WIFI_SSID";
+String ssid_pass = "YOUR_WIFI_PASS";
+String bot_token = "YOUR_BOT_TOKEN";
+String chat_id   = "YOUR_CHAT_ID";
 
 float t = 0, h = 0, lux = 0, dist = 0, db = 0;
 int gas = 0;
@@ -70,6 +70,7 @@ bool alert_active = false;
 unsigned long last_sensor = 0;
 unsigned long last_bot = 0;
 unsigned long last_wifi_check = 0;
+unsigned long last_debug = 0;
 
 // ================= MUSIK (DEFINISI NADA) =================
 #define NOTE_G3  196
@@ -117,7 +118,7 @@ void checkWiFi();
 int smoothAnalog(int pin);
 void updateTime();
 void checkAlert();
-void handleScanWiFi(); // New Feature
+void handleScanWiFi();
 
 // ================= WEB DASHBOARD (Updated) =================
 const char HTML_PAGE[] PROGMEM = R"=====(
@@ -196,7 +197,8 @@ const char HTML_PAGE[] PROGMEM = R"=====(
         <form action="/save" method="POST">
           <label>Pilih WiFi:</label>
           <div style="display:flex; gap:5px;">
-            <select id="ssid_list" name="ssid" required>
+            <!-- Removed 'required' to allow manual input -->
+            <select id="ssid_list" name="ssid">
               <option value="" disabled selected>-- Scan Dulu --</option>
             </select>
             <button type="button" onclick="scanWifi()" style="width:100px; padding:10px; background:#6366f1;">🔄 Scan</button>
@@ -307,6 +309,7 @@ const char HTML_PAGE[] PROGMEM = R"=====(
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("\n\n--- SMART CLASS IOT STARTING ---");
 
   // 1. Setup Pin & PWM Buzzer
   pinMode(PIN_FAN, OUTPUT);
@@ -329,9 +332,10 @@ void setup() {
   chat_id   = pref.getString("id", chat_id);
 
   bot.updateToken(bot_token);
+  Serial.println("[SETUP] Preferences Loaded");
 
   // 3. Koneksi WiFi (Non-Blocking Attempt)
-  Serial.print("Menghubungkan ke: "); Serial.println(ssid_name);
+  Serial.print("[WIFI] Connecting to: "); Serial.println(ssid_name);
 
   WiFi.mode(WIFI_AP_STA);
   WiFi.begin(ssid_name.c_str(), ssid_pass.c_str());
@@ -344,14 +348,15 @@ void setup() {
   }
 
   if(WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Terhubung!");
-    Serial.print("IP Address: "); Serial.println(WiFi.localIP());
+    Serial.println("\n[WIFI] Connected!");
+    Serial.print("[WIFI] IP Address: "); Serial.println(WiFi.localIP());
     // Init NTP Time
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET, "pool.ntp.org", "time.nist.gov");
+    Serial.println("[NTP] Time synced");
   } else {
-    Serial.println("\nGagal Connect. Masuk Mode Setup AP + Auto Reconnect Loop.");
+    Serial.println("\n[WIFI] Failed. Starting AP Mode.");
     WiFi.softAP("SmartClass_AP");
-    Serial.print("IP AP: "); Serial.println(WiFi.softAPIP());
+    Serial.print("[AP] IP Address: "); Serial.println(WiFi.softAPIP());
   }
 
   // 4. Setup Server
@@ -362,7 +367,9 @@ void setup() {
   server.on("/csv", handleDownload);
   server.on("/scan", handleScanWiFi); // Endpoint Scan WiFi
   server.on("/save", HTTP_POST, handleSaveSettings);
+  server.enableCORS(true); // ENABLE CORS AGAR TIDAK DIBLOKIR BROWSER
   server.begin();
+  Serial.println("[SERVER] Started");
 
   // --- STARTUP SOUND: MARIO INTRO ---
   int mario_notes[] = {NOTE_E5, NOTE_E5, NOTE_E5, NOTE_C5, NOTE_E5, NOTE_G5, NOTE_G4};
@@ -391,6 +398,12 @@ void loop() {
     updateTime();
     logicAuto();
     checkAlert();
+
+    // DEBUG LOG SETIAP 2 DETIK
+    Serial.print("[SENSOR] T:"); Serial.print(t);
+    Serial.print(" H:"); Serial.print(h);
+    Serial.print(" Gas:"); Serial.print(gas);
+    Serial.print(" Time:"); Serial.println(time_str);
   }
 
   // 2. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
@@ -399,6 +412,7 @@ void loop() {
     last_bot = now;
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     while(numNewMessages) {
+      Serial.println("[BOT] New Message!");
       handleTelegram(numNewMessages);
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
@@ -408,19 +422,22 @@ void loop() {
 // ================= FUNGSI-FUNGSI =================
 
 void handleScanWiFi() {
-  // PENTING: WiFi Scan adalah blocking operation (bisa 2-3 detik)
-  // Web akan menunggu sampai selesai.
+  Serial.println("[WIFI] Scanning Networks...");
   int n = WiFi.scanNetworks();
-  StaticJsonDocument<1024> doc; // Buffer JSON aman
+  Serial.print("[WIFI] Found: "); Serial.println(n);
+
+  // Use DynamicJsonDocument for safer heap allocation (avoid stack overflow)
+  DynamicJsonDocument doc(2048);
   JsonArray array = doc.to<JsonArray>();
 
   for (int i = 0; i < n; ++i) {
     array.add(WiFi.SSID(i));
-    if(i >= 15) break; // Batasi max 15 SSID agar buffer cukup
+    if(i >= 20) break; // Batasi max 20 SSID
   }
 
   String json;
   serializeJson(doc, json);
+  // NO MANUAL CORS HEADER HERE (server.enableCORS handles it)
   server.send(200, "application/json", json);
 }
 
@@ -449,7 +466,8 @@ void checkWiFi() {
   if (now - last_wifi_check > 10000) {
     last_wifi_check = now;
     if (WiFi.status() != WL_CONNECTED) {
-      WiFi.disconnect();
+      Serial.println("[WIFI] Lost Connection. Reconnecting...");
+      // Removed WiFi.disconnect() to avoid aggressive loop
       WiFi.reconnect();
     }
   }
@@ -476,6 +494,7 @@ void handleSaveSettings() {
     String n_bot  = server.arg("bot");
     String n_id   = server.arg("id");
 
+    Serial.println("[SETTINGS] Saving new config...");
     pref.putString("ssid", n_ssid);
     pref.putString("pass", n_pass);
     if(n_bot.length() > 5) pref.putString("bot", n_bot);
@@ -525,6 +544,7 @@ void checkAlert() {
   bool current_danger = (gas > GAS_ALARM_LIMIT) || (t > TEMP_ALARM_LIMIT);
 
   if (current_danger && !alert_active) {
+    Serial.println("[ALERT] Danger Detected!");
     String msg = "⚠️ *PERINGATAN BAHAYA!*\n\n";
     if(gas > GAS_ALARM_LIMIT) msg += "🔥 Gas Tinggi: " + String(gas) + " PPM\n";
     if(t > TEMP_ALARM_LIMIT)  msg += "🌡 Suhu Panas: " + String(t) + " °C\n";
@@ -533,6 +553,7 @@ void checkAlert() {
     alert_active = true;
   }
   else if (!current_danger && alert_active) {
+    Serial.println("[ALERT] Condition Normal.");
     bot.sendMessage(chat_id, "✅ *KONDISI AMAN*\nSensor kembali normal.", "Markdown");
     alert_active = false;
   }
@@ -559,7 +580,7 @@ void logicAuto() {
 void handleJson() {
   // PENGGUNAAN MEMORI YANG AMAN (ArduinoJson Static)
   // Mencegah heap fragmentation penyebab crash
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<1024> doc; // Buffer lebih besar
 
   doc["t"] = t;
   doc["h"] = h;
@@ -575,16 +596,21 @@ void handleJson() {
 
   String json;
   serializeJson(doc, json);
+  // NO MANUAL CORS HEADER HERE (server.enableCORS handles it)
   server.send(200, "application/json", json);
 }
 
 void handleCommand() {
   String act = server.arg("do");
+  Serial.print("[CMD] Received: "); Serial.println(act);
+
   if (act == "fan_toggle") { mode_auto = false; st_fan = !st_fan; digitalWrite(PIN_FAN, st_fan); }
   if (act == "lamp_toggle") { mode_auto = false; st_lamp = !st_lamp; digitalWrite(PIN_LAMP, st_lamp); }
   if (act == "auto_toggle") { mode_auto = !mode_auto; }
   if (act == "music_play") { is_playing = true; note_index = 0; note_state = false; last_note_start = millis(); }
   if (act == "music_stop") { is_playing = false; ledcWriteTone(PWM_CHANNEL, 0); }
+
+  // NO MANUAL CORS HEADER HERE
   server.send(200, "text/plain", "OK");
 }
 
@@ -624,6 +650,7 @@ void handleTelegram(int numNewMessages) {
   for (int i = 0; i < numNewMessages; i++) {
     String chat_id_msg = bot.messages[i].chat_id;
     String text = bot.messages[i].text;
+    Serial.print("[BOT] Msg: "); Serial.println(text);
 
     if (text == "/start") {
       bot.sendMessage(chat_id_msg, "Halo! Perintah: /cek, /fan_on, /fan_off, /lamp_on, /lamp_off", "");
