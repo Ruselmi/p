@@ -229,8 +229,8 @@ void setup() {
   pinMode(PIN_LAMP, OUTPUT);
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
-  pinMode(PIN_MQ_DO, INPUT);
-  pinMode(PIN_LDR_DO, INPUT); // LDR Digital Input
+  pinMode(PIN_MQ_DO, INPUT_PULLUP);   // Pullup biar default HIGH (Aman)
+  pinMode(PIN_LDR_DO, INPUT_PULLUP);  // Pullup
 
   // LEDC Setup
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
@@ -340,21 +340,24 @@ void readSensors() {
   // Debug Serial
   if(mq2_val > 2000) Serial.println("AI:ROKOK TERDETEKSI! 🚭 T:" + String(t));
 
-  // Safety Logic (Gas/Smoke) - THROTTLED & WARMUP (60s)
-  // Sensor MQ butuh waktu panas (warmup) agar pembacaan stabil (turun).
+  // Safety Logic (Gas/Smoke)
+  // FIX: Sensor Analog Mentok -> Kita hanya percaya Digital Output (DO) untuk Alert
   bool warmup_done = (millis() > 60000);
 
-  bool gas_alert = (gas > 3000) || (gas_dig == LOW); // Threshold naik ke 3000
-  bool smoke_alert = (mq2_val > 3000);
+  // Alert jika DO detect LOW (Detection)
+  // Analog hanya untuk display, tidak trigger alert karena sering mentok (4095)
+  bool gas_alert = (gas_dig == LOW);
+
+  // MQ2 Analog Threshold
+  bool smoke_alert = (mq2_val > 3500); // Threshold tinggi 3500
   unsigned long now = millis();
 
   if ((gas_alert || smoke_alert) && warmup_done) {
-    // Only send alert if enough time passed AND warmup done
     if (WiFi.status() == WL_CONNECTED && (now - last_alert > 30000)) {
         last_alert = now;
         String alert = "⚠️ BAHAYA: ";
-        if (gas_alert) alert += "Gas/Udara Buruk (" + String(gas) + ") ";
-        if (smoke_alert) alert += "Asap/Rokok (" + String(mq2_val) + ")";
+        if (gas_alert) alert += "Gas Bocor/Udara Buruk! (Digital Trigger) ";
+        if (smoke_alert) alert += "Asap Rokok Terdeteksi! ";
         bot.sendMessage(chat_id, alert, "");
     }
     ledcWriteTone(PWM_CHANNEL, 1000); // Alarm
