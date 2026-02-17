@@ -1,20 +1,14 @@
 /*
  * SMART CLASS IOT - MINIMALIST EDITION (Single File)
  * Board: ESP32 Dev Module
- * Fitur: Monitoring Sensor (Smoothed), Telegram Bot, Web Dashboard (Enhanced), Music Player (Non-Blocking), WiFi Manager (Auto-Reconnect)
+ * Fitur: Monitoring Sensor, Telegram Bot, Web Dashboard (Stable), Music Player, WiFi Manager (Scan & Connect)
  *
- * Update:
- * - FIXED: Function Prototypes added.
- * - SYSTEM: WiFi Auto-Reconnect & RSSI Monitoring added.
- * - SENSOR: Averaging filter for analog sensors (Gas, LDR, Sound) for stability.
- * - AUDIO: PWM LEDC system (ledcWriteTone) optimized.
- * - PIN: Buzzer updated to 26.
- * - SOUND: Startup (Mario) & Default (Zelda).
- *
- * NEW FEATURES:
- * - NTP Time: Auto-Sync Waktu (WIB UTC+7).
- * - JADWAL OTOMATIS: Sistem hanya aktif jam 07:00 - 17:00 (Hemat Energi).
- * - NOTIFIKASI BAHAYA: Kirim Telegram jika Gas > 2500 atau Suhu > 35°C.
+ * Update Fixes:
+ * - STABILITY: Menggunakan StaticJsonDocument untuk memori yang lebih aman (mencegah crash/hang).
+ * - WEB: Menambahkan fitur SCAN WIFI agar tidak perlu ketik manual.
+ * - BUG FIX: Prioritas server.handleClient() ditingkatkan agar web tidak lemot.
+ * - SYSTEM: Waktu NTP & Jadwal Otomatis (07:00-17:00).
+ * - ALERT: Notifikasi Bahaya (Gas > 2500 / Suhu > 35).
  */
 
 #include <WiFi.h>
@@ -24,11 +18,11 @@
 #include <DHT.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
-#include <time.h> // Library Waktu bawaan ESP32
+#include <time.h>
 
 // ================= KONFIGURASI PIN =================
 #define PIN_DHT         18
-#define PIN_BUZZER      26  // Update ke 26 sesuai request
+#define PIN_BUZZER      26
 #define PIN_FAN         4
 #define PIN_LAMP        2
 #define PIN_LDR         34
@@ -37,7 +31,7 @@
 #define PIN_TRIG        5
 #define PIN_ECHO        19
 
-// ================= KONFIGURASI PWM BUZZER =================
+// ================= KONFIGURASI PWM =================
 #define PWM_CHANNEL     0
 #define PWM_RESOLUTION  8
 #define PWM_FREQ        2000
@@ -45,9 +39,9 @@
 #define DHTTYPE         DHT22
 
 // ================= KONFIGURASI ALARM & WAKTU =================
-const int GAS_ALARM_LIMIT   = 2500; // Batas Bahaya Gas
-const float TEMP_ALARM_LIMIT = 35.0; // Batas Bahaya Suhu
-const long GMT_OFFSET_SEC   = 25200; // WIB (UTC+7) = 7 * 3600
+const int GAS_ALARM_LIMIT   = 2500;
+const float TEMP_ALARM_LIMIT = 35.0;
+const long GMT_OFFSET_SEC   = 25200; // WIB (UTC+7)
 const int DAYLIGHT_OFFSET   = 0;
 
 // ================= VARIABEL GLOBAL =================
@@ -57,7 +51,7 @@ WiFiClientSecure client;
 UniversalTelegramBot bot("", client);
 Preferences pref;
 
-// Default values
+// Default values (bisa diubah lewat web)
 String ssid_name = "ELSON";
 String ssid_pass = "elso250129";
 String bot_token = "8324067380:AAHfMtWfLdtoYByjnrm2sgy90z3y01V6C-I";
@@ -65,18 +59,17 @@ String chat_id   = "6383896382";
 
 float t = 0, h = 0, lux = 0, dist = 0, db = 0;
 int gas = 0;
-long rssi = 0; // Signal strength
+long rssi = 0;
 bool st_fan = false, st_lamp = false, mode_auto = true;
 String mood = "Netral";
-String time_str = "--:--"; // String jam
-bool is_day_time = true;   // Status siang/malam
-bool alert_active = false; // Status bahaya
+String time_str = "--:--";
+bool is_day_time = true;
+bool alert_active = false;
 
 // Timer variables
 unsigned long last_sensor = 0;
 unsigned long last_bot = 0;
 unsigned long last_wifi_check = 0;
-unsigned long last_alert_time = 0; // Anti-spam notif
 
 // ================= MUSIK (DEFINISI NADA) =================
 #define NOTE_G3  196
@@ -93,13 +86,12 @@ unsigned long last_alert_time = 0; // Anti-spam notif
 #define NOTE_F5  698
 #define NOTE_G5  784
 
-// --- ZELDA: SONG OF STORMS (untuk tombol Play Melody) ---
+// --- ZELDA: SONG OF STORMS ---
 int melody_theme[] = {
   NOTE_D4, NOTE_F4, NOTE_D5,
   NOTE_D4, NOTE_F4, NOTE_D5,
   NOTE_E5, NOTE_F5, NOTE_E5, NOTE_F5, NOTE_E5, NOTE_C5, NOTE_A4
 };
-// Durasi (4 = 1/4 ketukan, 8 = 1/8 ketukan, dst)
 int durations_theme[] = {
   8, 8, 2,
   8, 8, 2,
@@ -112,7 +104,7 @@ unsigned long last_note_start = 0;
 bool note_state = false;
 int melody_len = sizeof(melody_theme) / sizeof(int);
 
-// ================= FUNCTION PROTOTYPES (PENTING!) =================
+// ================= FUNCTION PROTOTYPES =================
 void handleSaveSettings();
 void readSensors();
 void logicAuto();
@@ -125,8 +117,9 @@ void checkWiFi();
 int smoothAnalog(int pin);
 void updateTime();
 void checkAlert();
+void handleScanWiFi(); // New Feature
 
-// ================= WEB DASHBOARD =================
+// ================= WEB DASHBOARD (Updated) =================
 const char HTML_PAGE[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html lang="id">
@@ -157,7 +150,7 @@ const char HTML_PAGE[] PROGMEM = R"=====(
     .btn-off:hover { background: var(--danger); }
     .btn-music { background: linear-gradient(135deg, #ec4899, #8b5cf6); border: none; }
 
-    input[type=text], input[type=password] { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; }
+    input[type=text], input[type=password], select { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; border-radius: 8px; border: 1px solid #475569; background: #334155; color: white; }
     .form-card { text-align: left !important; grid-column: span 2; }
 
     .footer { margin-top: 30px; text-align: center; font-size: 0.8rem; color: #475569; }
@@ -169,7 +162,7 @@ const char HTML_PAGE[] PROGMEM = R"=====(
     <header>
       <h1>Smart Class Panel</h1>
       <div style="margin-top:5px; color:#94a3b8; font-size:0.9rem;">
-        <span class="status-dot"></span>Online | <span id="ip">Loading...</span> | <span id="time">--:--</span>
+        <span class="status-dot" id="dot"></span><span id="status_txt">Online</span> | <span id="ip">Loading...</span> | <span id="time">--:--</span>
       </div>
     </header>
 
@@ -201,8 +194,16 @@ const char HTML_PAGE[] PROGMEM = R"=====(
       <div class="card form-card">
         <h3>⚙️ Pengaturan Koneksi</h3>
         <form action="/save" method="POST">
-          <label>WiFi SSID:</label>
-          <input type="text" name="ssid" placeholder="Nama WiFi" required>
+          <label>Pilih WiFi:</label>
+          <div style="display:flex; gap:5px;">
+            <select id="ssid_list" name="ssid" required>
+              <option value="" disabled selected>-- Scan Dulu --</option>
+            </select>
+            <button type="button" onclick="scanWifi()" style="width:100px; padding:10px; background:#6366f1;">🔄 Scan</button>
+          </div>
+
+          <!-- Fallback input text jika scan gagal atau hidden SSID -->
+          <input type="text" id="ssid_manual" name="ssid_manual" placeholder="Atau ketik nama WiFi manual..." style="margin-top:-10px;">
 
           <label>WiFi Password:</label>
           <input type="password" name="pass" placeholder="Password WiFi">
@@ -237,28 +238,66 @@ const char HTML_PAGE[] PROGMEM = R"=====(
 
   <script>
     function update() {
-      fetch('/data').then(r => r.json()).then(d => {
-        document.getElementById('t').innerText = d.t.toFixed(1);
-        document.getElementById('h').innerText = d.h.toFixed(0);
-        document.getElementById('gas').innerText = d.gas;
-        document.getElementById('db').innerText = d.db.toFixed(1);
-        document.getElementById('mood').innerText = d.mood;
-        document.getElementById('ip').innerText = window.location.hostname;
-        document.getElementById('time').innerText = d.time;
+      fetch('/data')
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById('t').innerText = d.t.toFixed(1);
+          document.getElementById('h').innerText = d.h.toFixed(0);
+          document.getElementById('gas').innerText = d.gas;
+          document.getElementById('db').innerText = d.db.toFixed(1);
+          document.getElementById('mood').innerText = d.mood;
+          document.getElementById('ip').innerText = window.location.hostname;
+          document.getElementById('time').innerText = d.time;
 
-        document.getElementById('s_fan').style.color = d.fan ? '#10b981' : '#64748b';
-        document.getElementById('s_lamp').style.color = d.lamp ? '#10b981' : '#64748b';
-        document.getElementById('s_auto').innerText = d.auto ? "ON" : "MANUAL";
+          document.getElementById('s_fan').style.color = d.fan ? '#10b981' : '#64748b';
+          document.getElementById('s_lamp').style.color = d.lamp ? '#10b981' : '#64748b';
+          document.getElementById('s_auto').innerText = d.auto ? "ON" : "MANUAL";
 
-        if(d.alert) {
-          document.getElementById('alert').style.display = 'block';
-        } else {
-          document.getElementById('alert').style.display = 'none';
-        }
-      });
+          if(d.alert) {
+            document.getElementById('alert').style.display = 'block';
+          } else {
+            document.getElementById('alert').style.display = 'none';
+          }
+
+          // Indikator Online
+          document.getElementById('dot').style.backgroundColor = '#10b981';
+          document.getElementById('status_txt').innerText = "Online";
+        })
+        .catch(err => {
+          console.log("Koneksi Error:", err);
+          document.getElementById('dot').style.backgroundColor = '#ef4444';
+          document.getElementById('status_txt').innerText = "Terputus...";
+        });
     }
+
+    function scanWifi() {
+      var sel = document.getElementById('ssid_list');
+      sel.innerHTML = "<option>Scanning...</option>";
+      fetch('/scan')
+        .then(r => r.json())
+        .then(data => {
+          sel.innerHTML = "";
+          if(data.length === 0) {
+            sel.innerHTML = "<option>Tidak ada WiFi ditemukan</option>";
+          } else {
+            data.forEach(ssid => {
+              var opt = document.createElement('option');
+              opt.value = ssid;
+              opt.innerText = ssid;
+              sel.appendChild(opt);
+            });
+          }
+        })
+        .catch(e => {
+          sel.innerHTML = "<option>Gagal Scan</option>";
+        });
+    }
+
     function cmd(act) { fetch('/cmd?do='+act).then(update); }
-    setInterval(update, 2000); update();
+
+    // Update setiap 2 detik
+    setInterval(update, 2000);
+    update();
   </script>
 </body>
 </html>
@@ -321,6 +360,7 @@ void setup() {
   server.on("/data", handleJson);
   server.on("/cmd", handleCommand);
   server.on("/csv", handleDownload);
+  server.on("/scan", handleScanWiFi); // Endpoint Scan WiFi
   server.on("/save", HTTP_POST, handleSaveSettings);
   server.begin();
 
@@ -337,19 +377,20 @@ void setup() {
 }
 
 void loop() {
-  server.handleClient();
+  server.handleClient(); // PENTING: Panggil ini sesering mungkin!
   handleMusic();
   checkWiFi(); // Auto reconnect check
 
   unsigned long now = millis();
 
   // 1. Baca Sensor (Setiap 2 detik)
+  // JANGAN TERLALU CEPAT agar Server sempat respons
   if (now - last_sensor > 2000) {
     last_sensor = now;
     readSensors();
-    updateTime(); // Cek Waktu NTP
-    logicAuto();  // Logika Otomatis + Jadwal
-    checkAlert(); // Cek Bahaya
+    updateTime();
+    logicAuto();
+    checkAlert();
   }
 
   // 2. Cek Telegram (Setiap 3 detik jika konek & TIDAK SEDANG MUSIK)
@@ -365,6 +406,23 @@ void loop() {
 }
 
 // ================= FUNGSI-FUNGSI =================
+
+void handleScanWiFi() {
+  // PENTING: WiFi Scan adalah blocking operation (bisa 2-3 detik)
+  // Web akan menunggu sampai selesai.
+  int n = WiFi.scanNetworks();
+  StaticJsonDocument<1024> doc; // Buffer JSON aman
+  JsonArray array = doc.to<JsonArray>();
+
+  for (int i = 0; i < n; ++i) {
+    array.add(WiFi.SSID(i));
+    if(i >= 15) break; // Batasi max 15 SSID agar buffer cukup
+  }
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
 
 void updateTime() {
   struct tm timeinfo;
@@ -391,7 +449,6 @@ void checkWiFi() {
   if (now - last_wifi_check > 10000) {
     last_wifi_check = now;
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi Putus! Mencoba reconnect...");
       WiFi.disconnect();
       WiFi.reconnect();
     }
@@ -400,17 +457,21 @@ void checkWiFi() {
 
 int smoothAnalog(int pin) {
   long total = 0;
-  int samples = 10;
+  int samples = 5; // Kurangi sample agar loop lebih cepat
   for (int i = 0; i < samples; i++) {
     total += analogRead(pin);
-    delay(2); // delay kecil untuk stabilisasi ADC
+    delay(2);
   }
   return total / samples;
 }
 
 void handleSaveSettings() {
-  if (server.hasArg("ssid")) {
+  if (server.hasArg("ssid") || server.hasArg("ssid_manual")) {
     String n_ssid = server.arg("ssid");
+    if(server.arg("ssid_manual").length() > 0) {
+      n_ssid = server.arg("ssid_manual"); // Prioritas manual input jika diisi
+    }
+
     String n_pass = server.arg("pass");
     String n_bot  = server.arg("bot");
     String n_id   = server.arg("id");
@@ -425,7 +486,7 @@ void handleSaveSettings() {
     delay(2000);
     ESP.restart();
   } else {
-    server.send(400, "text/plain", "Error");
+    server.send(400, "text/plain", "Error: SSID kosong");
   }
 }
 
@@ -435,25 +496,21 @@ void readSensors() {
   if (!isnan(_t)) t = _t;
   if (!isnan(_h)) h = _h;
 
-  // Baca sensor dengan averaging (smoothing)
   gas = smoothAnalog(PIN_MQ135);
   lux = smoothAnalog(PIN_LDR);
 
-  // Ultrasonik
+  // Ultrasonik Timeout pendek (30ms)
   digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2);
   digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10);
   digitalWrite(PIN_TRIG, LOW);
-  long dur = pulseIn(PIN_ECHO, HIGH, 30000); // 30ms timeout
+  long dur = pulseIn(PIN_ECHO, HIGH, 30000);
   dist = (dur == 0) ? 0 : dur * 0.034 / 2;
 
-  // Suara (Smooth)
   int raw_sound = smoothAnalog(PIN_SOUND);
-  db = (raw_sound / 4095.0) * 100.0; // Kalibrasi sederhana
+  db = (raw_sound / 4095.0) * 100.0;
 
-  // RSSI WiFi
   rssi = WiFi.RSSI();
 
-  // Logika Mood
   int stress = 0;
   if (t > 28) stress += 30;
   if (db > 60) stress += 30;
@@ -468,17 +525,14 @@ void checkAlert() {
   bool current_danger = (gas > GAS_ALARM_LIMIT) || (t > TEMP_ALARM_LIMIT);
 
   if (current_danger && !alert_active) {
-    // Bahaya baru terdeteksi -> Kirim Telegram
     String msg = "⚠️ *PERINGATAN BAHAYA!*\n\n";
     if(gas > GAS_ALARM_LIMIT) msg += "🔥 Gas Tinggi: " + String(gas) + " PPM\n";
     if(t > TEMP_ALARM_LIMIT)  msg += "🌡 Suhu Panas: " + String(t) + " °C\n";
     msg += "\nSegera cek lokasi!";
-
     bot.sendMessage(chat_id, msg, "Markdown");
     alert_active = true;
   }
   else if (!current_danger && alert_active) {
-    // Bahaya selesai -> Kirim Telegram
     bot.sendMessage(chat_id, "✅ *KONDISI AMAN*\nSensor kembali normal.", "Markdown");
     alert_active = false;
   }
@@ -487,8 +541,6 @@ void checkAlert() {
 void logicAuto() {
   if (!mode_auto) return;
 
-  // FITUR BARU: JADWAL OTOMATIS (Hanya aktif 07:00 - 17:00)
-  // Di luar jam itu, matikan semua untuk hemat energi (kecuali ada bahaya, tp bahaya di handle checkAlert)
   if (!is_day_time) {
     st_fan = false;
     st_lamp = false;
@@ -497,7 +549,6 @@ void logicAuto() {
     return;
   }
 
-  // Logika Normal (Siang Hari)
   if (t > 27.0) { st_fan = true; digitalWrite(PIN_FAN, HIGH); }
   else { st_fan = false; digitalWrite(PIN_FAN, LOW); }
 
@@ -506,19 +557,24 @@ void logicAuto() {
 }
 
 void handleJson() {
-  String json = "{";
-  json += "\"t\":" + String(t) + ",";
-  json += "\"h\":" + String(h) + ",";
-  json += "\"gas\":" + String(gas) + ",";
-  json += "\"db\":" + String(db) + ",";
-  json += "\"rssi\":" + String(rssi) + ",";
-  json += "\"fan\":" + String(st_fan) + ",";
-  json += "\"lamp\":" + String(st_lamp) + ",";
-  json += "\"auto\":" + String(mode_auto) + ",";
-  json += "\"mood\":\"" + mood + "\",";
-  json += "\"time\":\"" + time_str + "\",";
-  json += "\"alert\":" + String(alert_active ? "true" : "false");
-  json += "}";
+  // PENGGUNAAN MEMORI YANG AMAN (ArduinoJson Static)
+  // Mencegah heap fragmentation penyebab crash
+  StaticJsonDocument<512> doc;
+
+  doc["t"] = t;
+  doc["h"] = h;
+  doc["gas"] = gas;
+  doc["db"] = db;
+  doc["rssi"] = rssi;
+  doc["fan"] = st_fan;
+  doc["lamp"] = st_lamp;
+  doc["auto"] = mode_auto;
+  doc["mood"] = mood;
+  doc["time"] = time_str;
+  doc["alert"] = alert_active;
+
+  String json;
+  serializeJson(doc, json);
   server.send(200, "application/json", json);
 }
 
@@ -539,7 +595,7 @@ void handleDownload() {
   server.send(200, "text/csv", csv);
 }
 
-// LOGIKA MUSIK NON-BLOCKING DENGAN LEDC
+// LOGIKA MUSIK
 void handleMusic() {
   if (!is_playing) return;
 
@@ -548,20 +604,17 @@ void handleMusic() {
   unsigned long now = millis();
 
   if (!note_state) {
-    // Mulai mainkan nada
     ledcWriteTone(PWM_CHANNEL, melody_theme[note_index]);
     note_state = true;
     last_note_start = now;
   }
 
-  // Matikan nada setelah durasi 'note_duration'
   if (note_state && (now - last_note_start > note_duration)) {
     ledcWriteTone(PWM_CHANNEL, 0);
   }
 
-  // Pindah ke nada berikutnya setelah jeda 'pause_between'
   if (now - last_note_start > pause_between) {
-    note_state = false; // Reset state untuk nada baru
+    note_state = false;
     note_index++;
     if (note_index >= melody_len) { note_index = 0; }
   }
